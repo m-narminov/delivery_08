@@ -1,0 +1,100 @@
+name: foodster
+
+services:
+  # Та же мажорная версия, что на Render. Начиная с 18 образ хранит данные в подкаталоге
+  # с номером версии (/var/lib/postgresql/18/docker), поэтому том монтируется уровнем выше.
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: foodster
+      POSTGRES_PASSWORD: foodster
+      POSTGRES_DB: foodster
+    command: ['postgres', '-c', 'max_connections=100']
+    ports:
+      - '${DEV_DB_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    deploy:
+      resources:
+        limits:
+          cpus: '${PG_CPUS:-0.1}'
+          memory: ${PG_MEMORY:-256m}
+          pids: 200
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U foodster -d foodster']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Тестовая БД: данные в RAM (tmpfs), гарантии сохранности на диск отключены.
+  # При каждом перезапуске база создаётся с нуля — именно это и нужно тестам.
+  # Лимиты здесь — страховка, а не эмуляция Render: тесты должны быть быстрыми.
+  # Страницы tmpfs учитываются в памяти контейнера, поэтому memory > размера tmpfs.
+  postgres-test:
+    image: postgres:18-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_USER: foodster
+      POSTGRES_PASSWORD: foodster
+      POSTGRES_DB: foodster_test
+    ports:
+      - '${TEST_DB_PORT:-5433}:5432'
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql
+        tmpfs:
+          size: 536870912 # 512 МБ
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=200
+    deploy:
+      resources:
+        limits:
+          cpus: '${TEST_PG_CPUS:-2}'
+          memory: ${TEST_PG_MEMORY:-1g}
+          pids: 400
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U foodster -d foodster_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Только в памяти, как бесплатный Key Value на Render: без RDB-снапшотов и без AOF.
+  # Лимит контейнера выше maxmemory, чтобы оставить место самому процессу.
+  valkey:
+    image: valkey/valkey:8-alpine
+    command:
+      - valkey-server
+      - --maxmemory
+      - ${VALKEY_MAXMEMORY:-25mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --maxclients
+      - '50'
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+    ports:
+      - '${VALKEY_PORT:-6379}:6379'
+    deploy:
+      resources:
+        limits:
+          cpus: '${VALKEY_CPUS:-0.25}'
+          memory: ${VALKEY_MEMORY:-64m}
+          pids: 50
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

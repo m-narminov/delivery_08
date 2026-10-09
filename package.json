@@ -1,0 +1,34 @@
+{
+  "name": "foodster-ops",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Admin panel for the Foodster operations team: orders, statuses, couriers, audit log",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev-db:up": "docker compose up -d --wait",
+    "dev-db:down": "docker compose stop",
+    "dev-db:reset": "docker compose --profile test down -v",
+    "test-db:up": "docker compose --profile test up -d --wait postgres-test",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}
