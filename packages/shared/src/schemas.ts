@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CANCEL_REASON_MAX_LENGTH } from './order-rules';
+import { ORDER_EVENT_ACTIONS } from './order-events';
 import { ORDER_STATUSES } from './order-status';
 
 export const orderStatusSchema = z.enum(ORDER_STATUSES);
@@ -86,6 +87,57 @@ export const sessionSchema = z.object({
   operator: operatorSchema,
 });
 
+// Справочники.
+const referenceSchema = z.object({ id: idSchema, name: z.string() });
+
+export const restaurantSchema = referenceSchema;
+
+export const courierSchema = referenceSchema.extend({
+  phone: z.string(),
+  // Сколько заказов курьера сейчас в ready/picked_up — для выбора курьера с учётом лимита.
+  activeDeliveries: z.number().int().nonnegative(),
+});
+
+// Время — строка ISO 8601 в UTC (Date.toISOString()).
+const timestampSchema = z.iso.datetime();
+
+export const orderSchema = z.object({
+  id: idSchema,
+  status: orderStatusSchema,
+  customerName: z.string(),
+  customerPhone: z.string(),
+  deliveryAddress: z.string(),
+  // Сумма в копейках: целое число без ошибок округления.
+  amountMinor: z.number().int().positive(),
+  restaurant: referenceSchema,
+  courier: referenceSchema.nullable(),
+  // Версия для оптимистичной блокировки: та же, что в заголовке ETag.
+  version: z.number().int().positive(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+
+export const orderListSchema = z.object({
+  items: z.array(orderSchema),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+});
+
+export const orderEventSchema = z.object({
+  id: idSchema,
+  action: z.enum(ORDER_EVENT_ACTIONS),
+  fromStatus: orderStatusSchema.nullable(),
+  toStatus: orderStatusSchema.nullable(),
+  fromCourier: referenceSchema.nullable(),
+  toCourier: referenceSchema.nullable(),
+  reason: z.string().nullable(),
+  // null — действие не оператора (заказ создан клиентским приложением).
+  actor: referenceSchema.nullable(),
+  orderVersion: z.number().int().positive(),
+  createdAt: timestampSchema,
+});
+
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type OrderSortOption = (typeof ORDER_SORT_OPTIONS)[number];
 export type TransitionBody = z.infer<typeof transitionBodySchema>;
@@ -95,3 +147,8 @@ export type LoginBody = z.infer<typeof loginBodySchema>;
 export type Operator = z.infer<typeof operatorSchema>;
 export type OperatorOption = z.infer<typeof operatorOptionSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type Restaurant = z.infer<typeof restaurantSchema>;
+export type Courier = z.infer<typeof courierSchema>;
+export type Order = z.infer<typeof orderSchema>;
+export type OrderList = z.infer<typeof orderListSchema>;
+export type OrderEvent = z.infer<typeof orderEventSchema>;
