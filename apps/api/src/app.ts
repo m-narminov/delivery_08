@@ -22,6 +22,9 @@ declare module 'fastify' {
   }
 }
 
+const REQUEST_ID_HEADER = 'x-request-id';
+const REQUEST_ID_PATTERN = /^[\w-]{1,64}$/;
+
 export interface AppDependencies {
   config: Config;
   db: Database;
@@ -33,15 +36,26 @@ export interface AppDependencies {
 export async function buildApp({ config, db, logger: appLogger = logger }: AppDependencies) {
   const base = Fastify({
     loggerInstance: appLogger,
-    // Id запроса попадает в каждую строку лога этого запроса; входящий X-Request-Id сохраняем.
-    requestIdHeader: 'x-request-id',
-    genReqId: () => randomUUID(),
+    // Id запроса попадает в каждую строку лога этого запроса. Входящий X-Request-Id
+    // принимаем только в безопасном формате, иначе генерируем свой.
+    requestIdHeader: false,
+    genReqId: (request) => {
+      const incoming = request.headers[REQUEST_ID_HEADER];
+      return typeof incoming === 'string' && REQUEST_ID_PATTERN.test(incoming)
+        ? incoming
+        : randomUUID();
+    },
   });
   base.setValidatorCompiler(validatorCompiler);
   base.setSerializerCompiler(serializerCompiler);
   base.decorate('db', db);
   base.decorate('config', config);
 
+  // Id запроса в ответе: по нему легко найти запрос в логах.
+  base.addHook('onRequest', (request, reply, done) => {
+    reply.header(REQUEST_ID_HEADER, request.id);
+    done();
+  });
   registerErrorHandler(base);
   await registerSwagger(base);
   await registerSession(base, config);

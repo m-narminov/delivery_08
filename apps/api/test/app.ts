@@ -14,9 +14,11 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     NODE_ENV: 'test',
     HOST: '127.0.0.1',
     PORT: 0,
+    LOG_LEVEL: 'silent',
     DATABASE_URL: 'postgres://unused',
     JWT_SECRET: 'test-secret-'.padEnd(32, 'x'),
     SESSION_TTL_HOURS: 12,
+    COOKIE_SECURE: false,
     REDIS_URL: undefined,
     ...overrides,
   };

@@ -14,7 +14,7 @@ export async function listOperatorOptions(db: Database): Promise<OperatorOption[
   return db
     .select({ id: operators.id, name: operators.name })
     .from(operators)
-    .orderBy(asc(operators.name));
+    .orderBy(asc(operators.name), asc(operators.id));
 }
 
 // Строка БД → DTO для ответа: хеш пароля наружу не уходит.

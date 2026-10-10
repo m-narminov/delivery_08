@@ -1,4 +1,6 @@
 import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'pino';
+import { z } from 'zod';
+import { logLevelSchema } from './config';
 
 // Секреты не должны попасть в логи ни при каких условиях.
 const REDACT_PATHS = [
@@ -11,12 +13,22 @@ const REDACT_PATHS = [
   'res.headers["set-cookie"]',
 ];
 
+// Логгер создаётся при импорте, раньше loadConfig(), поэтому LOG_LEVEL проверяем здесь той же
+// схемой: опечатка даёт понятное «Invalid configuration», а не внутреннюю ошибку pino.
+function levelFromEnv(): string {
+  const result = logLevelSchema.safeParse(process.env.LOG_LEVEL);
+  if (!result.success) {
+    throw new Error(`Invalid configuration:\n${z.prettifyError(result.error)}`);
+  }
+  return result.data;
+}
+
 export function createLogger(
   options: { level?: string; destination?: DestinationStream } = {},
 ): Logger {
   const config: LoggerOptions = {
     name: 'foodster-api',
-    level: options.level ?? process.env.LOG_LEVEL ?? 'info',
+    level: options.level ?? levelFromEnv(),
     timestamp: pino.stdTimeFunctions.isoTime,
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
   };

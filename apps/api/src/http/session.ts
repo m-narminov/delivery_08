@@ -28,12 +28,12 @@ declare module 'fastify' {
 // Сессия — подписанный JWT в httpOnly-cookie:
 // - httpOnly: JS на странице не может прочитать токен (защита от кражи через XSS);
 // - SameSite=Lax: браузер не пришлёт cookie в POST/PUT с чужого сайта (защита от CSRF);
-// - Secure в production: cookie уходит только по HTTPS.
+// - Secure (по умолчанию включён, см. COOKIE_SECURE): cookie уходит только по HTTPS.
 export function sessionCookieOptions(config: Config): CookieSerializeOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: config.NODE_ENV === 'production',
+    secure: config.COOKIE_SECURE,
     path: '/',
     maxAge: config.SESSION_TTL_HOURS * 60 * 60,
   };
@@ -44,6 +44,8 @@ export async function registerSession(app: FastifyInstance, config: Config): Pro
   await app.register(jwt, {
     secret: config.JWT_SECRET,
     cookie: { cookieName: SESSION_COOKIE, signed: false },
+    // Только cookie: заголовок Authorization: Bearer не должен быть вторым способом входа.
+    verify: { onlyCookie: true },
     sign: { expiresIn: `${config.SESSION_TTL_HOURS}h` },
   });
 

@@ -17,12 +17,12 @@ export const healthRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         response: { 200: healthSchema, 503: healthSchema },
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
       try {
         await app.db.execute(sql`select 1`);
         return { status: 'ok' as const };
       } catch (error) {
-        app.log.error({ err: error }, 'Database health check failed');
+        request.log.error({ err: error }, 'Database health check failed');
         return reply.code(503).send({ status: 'unavailable' });
       }
     },

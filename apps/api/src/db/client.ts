@@ -6,7 +6,8 @@ import * as schema from './schema';
 export type Database = NodePgDatabase<typeof schema>;
 
 export function createDatabase(connectionString: string): { db: Database; pool: pg.Pool } {
-  const pool = new pg.Pool({ connectionString });
+  // Без таймаута подключения запрос (и health check) висит, пока БД недоступна.
+  const pool = new pg.Pool({ connectionString, connectionTimeoutMillis: 5_000 });
   // Ошибка простаивающего соединения (например, БД перезапустилась). Без обработчика
   // событие 'error' уронило бы весь процесс.
   pool.on('error', (error) => {

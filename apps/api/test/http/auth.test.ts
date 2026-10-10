@@ -1,6 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SESSION_COOKIE } from '../../src/http/session';
-import { createTestApp, insertOperator, loginAs, TEST_PASSWORD, type TestApp } from '../app';
+import { eq } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Database } from '../../src/db/client';
+import { operators } from '../../src/db/schema';
+import { SESSION_COOKIE, sessionCookieOptions } from '../../src/http/session';
+import {
+  createTestApp,
+  insertOperator,
+  loginAs,
+  TEST_PASSWORD,
+  testConfig,
+  type TestApp,
+} from '../app';
 
 interface ProblemBody {
   status: number;
@@ -9,12 +19,14 @@ interface ProblemBody {
 }
 
 let app: TestApp;
+let db: Database;
 let close: () => Promise<void>;
 let operator: Awaited<ReturnType<typeof insertOperator>>;
 
 beforeAll(async () => {
   const testApp = await createTestApp();
   app = testApp.app;
+  db = testApp.db;
   close = testApp.close;
   operator = await insertOperator(testApp.db, { name: 'Анна Смирнова' });
 });
@@ -94,6 +106,52 @@ describe('GET /api/auth/me', () => {
       cookies: { [SESSION_COOKIE]: `${session}tampered` },
     });
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('сессия: граничные случаи', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('токен в заголовке Authorization: Bearer не принимается — только cookie', async () => {
+    const session = await loginAs(app, operator.id);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('истёкшая сессия — 401', async () => {
+    const session = await loginAs(app, operator.id);
+    // Подменяем только Date: fast-jwt берёт текущее время из Date.now().
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 13 * 60 * 60 * 1000);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      cookies: { [SESSION_COOKIE]: session },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('удалённый оператор с действующим токеном — 401', async () => {
+    const removed = await insertOperator(db, { name: 'Удаляемый оператор' });
+    const session = await loginAs(app, removed.id);
+    await db.delete(operators).where(eq(operators.id, removed.id));
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      cookies: { [SESSION_COOKIE]: session },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('флаг Secure у cookie управляется COOKIE_SECURE', () => {
+    expect(sessionCookieOptions(testConfig({ COOKIE_SECURE: true })).secure).toBe(true);
+    expect(sessionCookieOptions(testConfig({ COOKIE_SECURE: false })).secure).toBe(false);
   });
 });
 
