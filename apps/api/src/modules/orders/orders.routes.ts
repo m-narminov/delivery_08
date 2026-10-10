@@ -8,7 +8,7 @@ import {
   orderSchema,
   transitionBodySchema,
 } from '@foodster/shared';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { matchesIfNoneMatch, versionEtag } from '../../http/etag';
@@ -22,6 +22,7 @@ import {
   cancelOrder,
   changeOrderCourier,
   changeOrderStatus,
+  type MutationResult,
   type MutationTarget,
 } from './orders.commands';
 import { getOrder, getOrderEvents, listOrders } from './orders.service';
@@ -100,6 +101,17 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
     actorId: currentOperator(request).id,
   });
 
+  // Транзакция уже закоммичена: публикуем событие для открытых SSE-потоков и отвечаем.
+  // Без изменений (тот же курьер) события нет. Порядок «сначала коммит, потом публикация»
+  // означает, что при сбое между ними событие потеряется, но данные — нет.
+  const respond = async (reply: FastifyReply, result: MutationResult) => {
+    if (result.event) {
+      await app.orderEvents.publish({ orderId: result.order.id, event: result.event });
+    }
+    reply.header('etag', versionEtag(result.order.version));
+    return result.order;
+  };
+
   app.post(
     '/:id/transitions',
     {
@@ -114,9 +126,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
       },
     },
     async (request, reply) => {
-      const { order } = await changeOrderStatus(app.db, target(request), request.body.to);
-      reply.header('etag', versionEtag(order.version));
-      return order;
+      return respond(reply, await changeOrderStatus(app.db, target(request), request.body.to));
     },
   );
 
@@ -134,9 +144,8 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
       },
     },
     async (request, reply) => {
-      const { order } = await changeOrderCourier(app.db, target(request), request.body.courierId);
-      reply.header('etag', versionEtag(order.version));
-      return order;
+      const courierId = request.body.courierId;
+      return respond(reply, await changeOrderCourier(app.db, target(request), courierId));
     },
   );
 
@@ -154,9 +163,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
       },
     },
     async (request, reply) => {
-      const { order } = await cancelOrder(app.db, target(request), request.body.reason);
-      reply.header('etag', versionEtag(order.version));
-      return order;
+      return respond(reply, await cancelOrder(app.db, target(request), request.body.reason));
     },
   );
 

@@ -1,3 +1,4 @@
+import { Redis } from 'ioredis';
 import { createDatabase } from '../src/db/client';
 import { runMigrations } from '../src/db/migrations';
 import { requireEnv } from '../src/env';
@@ -5,9 +6,10 @@ import { databaseUrl, TEMPLATE_DATABASE, TEST_DATABASE_PREFIX, withAdminClient }
 
 // Выполняется один раз перед всеми тестами: пересоздаёт шаблонную БД со свежими миграциями.
 export default async function setup(): Promise<void> {
-  // Переменная проверяется до подключения: если её нет, ошибка должна сказать именно это,
+  // Переменные проверяются до подключения: если их нет, ошибка должна сказать именно это,
   // а не «БД недоступна».
   requireEnv('TEST_DATABASE_URL');
+  await checkValkey(requireEnv('TEST_REDIS_URL'));
   try {
     await withAdminClient(async (client) => {
       // Остатки прошлых прогонов, если тесты были прерваны.
@@ -33,5 +35,22 @@ export default async function setup(): Promise<void> {
   } finally {
     // Пока к шаблону есть подключения, копировать его нельзя.
     await pool.end();
+  }
+}
+
+// Тестам событий и кэша нужен Valkey. Проверяем сразу, чтобы не получить вместо понятной
+// подсказки пачку таймаутов в отдельных тестах.
+async function checkValkey(url: string): Promise<void> {
+  // Одна попытка подключения, без повторов.
+  const client = new Redis(url, { lazyConnect: true, retryStrategy: () => null });
+  try {
+    await client.connect();
+    await client.ping();
+  } catch (error) {
+    throw new Error('Test Valkey is unavailable. Run "npm run test-db:setup" first.', {
+      cause: error,
+    });
+  } finally {
+    client.disconnect();
   }
 }

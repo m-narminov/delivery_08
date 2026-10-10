@@ -2,7 +2,7 @@ import { courierSchema } from '@foodster/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { protectedErrorResponses } from '../../http/problem-responses';
-import { listCouriers } from './couriers.repository';
+import { listCouriers } from './couriers.service';
 
 export const couriersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
   app.get(
@@ -15,7 +15,7 @@ export const couriersRoutes: FastifyPluginCallbackZod = (app, _options, done) =>
         response: { 200: z.array(courierSchema), ...protectedErrorResponses },
       },
     },
-    () => listCouriers(app.db),
+    () => listCouriers(app.db, app.cache),
   );
   done();
 };

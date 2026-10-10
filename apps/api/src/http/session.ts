@@ -16,7 +16,8 @@ export interface SessionPayload {
 declare module '@fastify/jwt' {
   interface FastifyJWT {
     payload: SessionPayload;
-    user: SessionPayload;
+    // После проверки токена: exp — время истечения сессии, секунды Unix (ставит fast-jwt).
+    user: SessionPayload & { exp?: number };
   }
 }
 

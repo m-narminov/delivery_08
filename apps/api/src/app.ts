@@ -6,6 +6,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { noCache, type Cache } from './cache/cache';
 import type { Config } from './config';
 import type { Database } from './db/client';
 import { registerErrorHandler } from './http/error-handler';
@@ -16,11 +17,14 @@ import { logger } from './logger';
 import { authRoutes } from './modules/auth/auth.routes';
 import { healthRoutes } from './modules/health/health.routes';
 import { operatorsRoutes } from './modules/operators/operators.routes';
+import { createLocalOrderEventBus, type OrderEventBus } from './realtime/order-event-bus';
 
 declare module 'fastify' {
   interface FastifyInstance {
     db: Database;
     config: Config;
+    orderEvents: OrderEventBus;
+    cache: Cache;
   }
 }
 
@@ -32,11 +36,20 @@ export interface AppDependencies {
   config: Config;
   db: Database;
   logger?: FastifyBaseLogger;
+  // Без Valkey (по умолчанию): события внутри процесса, кэша нет.
+  orderEvents?: OrderEventBus;
+  cache?: Cache;
 }
 
 // Сборка приложения без запуска сервера: тесты вызывают buildApp и шлют запросы
 // через app.inject(), не открывая порт. Зависимости (БД, конфиг) передаются снаружи.
-export async function buildApp({ config, db, logger: appLogger = logger }: AppDependencies) {
+export async function buildApp({
+  config,
+  db,
+  logger: appLogger = logger,
+  orderEvents = createLocalOrderEventBus(appLogger),
+  cache = noCache,
+}: AppDependencies) {
   const base = Fastify({
     loggerInstance: appLogger,
     // Render опрашивает health check постоянно: автоматические записи о таких запросах
@@ -60,6 +73,8 @@ export async function buildApp({ config, db, logger: appLogger = logger }: AppDe
   base.setSerializerCompiler(serializerCompiler);
   base.decorate('db', db);
   base.decorate('config', config);
+  base.decorate('orderEvents', orderEvents);
+  base.decorate('cache', cache);
 
   // Id запроса в ответе: по нему легко найти запрос в логах.
   base.addHook('onRequest', (request, reply, done) => {

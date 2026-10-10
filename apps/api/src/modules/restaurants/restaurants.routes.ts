@@ -2,7 +2,7 @@ import { restaurantSchema } from '@foodster/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { protectedErrorResponses } from '../../http/problem-responses';
-import { listRestaurants } from './restaurants.repository';
+import { listRestaurants } from './restaurants.service';
 
 export const restaurantsRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
   app.get(
@@ -15,7 +15,7 @@ export const restaurantsRoutes: FastifyPluginCallbackZod = (app, _options, done)
         response: { 200: z.array(restaurantSchema), ...protectedErrorResponses },
       },
     },
-    () => listRestaurants(app.db),
+    () => listRestaurants(app.db, app.cache),
   );
   done();
 };
