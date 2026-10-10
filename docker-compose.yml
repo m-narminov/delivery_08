@@ -20,8 +20,10 @@ services:
           cpus: '${PG_CPUS:-0.1}'
           memory: ${PG_MEMORY:-256m}
           pids: 200
+    # -h 127.0.0.1: проверка по TCP. При первом запуске образ поднимает временный сервер только на
+    # unix-сокете; проверка через сокет сказала бы «готов» раньше, чем откроется порт 5432.
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U foodster -d foodster']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U foodster -d foodster']
       interval: 2s
       timeout: 3s
       retries: 30
@@ -61,7 +63,7 @@ services:
           memory: ${TEST_PG_MEMORY:-1g}
           pids: 400
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U foodster -d foodster_test']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U foodster -d foodster_test']
       interval: 2s
       timeout: 3s
       retries: 30
