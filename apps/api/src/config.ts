@@ -37,7 +37,8 @@ const configSchema = z
 export type Config = z.infer<typeof configSchema>;
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const result = configSchema.safeParse(env);
+  // Ошибка конфигурации — системная, для разработчика: всегда на английском.
+  const result = configSchema.safeParse(env, { error: z.locales.en().localeError });
   if (!result.success) {
     throw new Error(`Invalid configuration:\n${z.prettifyError(result.error)}`);
   }

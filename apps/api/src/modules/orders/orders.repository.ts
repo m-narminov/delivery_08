@@ -1,5 +1,10 @@
-import { searchVariants, type OrderListQuery, type OrderSortOption } from '@foodster/shared';
-import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import {
+  ACTIVE_DELIVERY_STATUSES,
+  searchVariants,
+  type OrderListQuery,
+  type OrderSortOption,
+} from '@foodster/shared';
+import { and, asc, count, desc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '../../db/client';
 import { couriers, operators, orderEvents, orders, restaurants } from '../../db/schema';
@@ -8,7 +13,7 @@ import { couriers, operators, orderEvents, orders, restaurants } from '../../db/
 // («садвая» против «садовая») даёт 0.5 — замерено на нашей БД.
 export const SEARCH_SIMILARITY_THRESHOLD = 0.4;
 
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
 
 // Заказ вместе с названием ресторана и именем курьера — одним запросом (JOIN), без N+1.
@@ -132,4 +137,80 @@ export async function listOrderEvents(db: Executor, orderId: number): Promise<Or
   return selectOrderEvents(db)
     .where(eq(orderEvents.orderId, orderId))
     .orderBy(asc(orderEvents.orderVersion));
+}
+
+export async function findLastOrderEvent(
+  db: Executor,
+  orderId: number,
+): Promise<OrderEventRow | undefined> {
+  const [row] = await selectOrderEvents(db)
+    .where(eq(orderEvents.orderId, orderId))
+    .orderBy(desc(orderEvents.orderVersion))
+    .limit(1);
+  return row;
+}
+
+// --- Запись: вызывается только внутри транзакции ---
+
+// Блокирует строку курьера до конца транзакции. Все, кто меняет активные доставки этого
+// курьера, выстраиваются в очередь — так лимит нельзя обойти гонкой.
+//
+// Именно FOR NO KEY UPDATE, а не FOR UPDATE: проверка внешнего ключа при вставке в order_events
+// (from/to_courier_id) берёт на строку курьера FOR KEY SHARE. С FOR UPDATE она конфликтует,
+// и две транзакции, меняющие курьеров, могли взаимно заблокироваться (deadlock → 500).
+// FOR NO KEY UPDATE с FOR KEY SHARE не конфликтует, а сам с собой — да: очередь сохраняется.
+export async function lockCourier(
+  tx: Transaction,
+  courierId: number,
+): Promise<{ id: number; name: string } | undefined> {
+  const [row] = await tx
+    .select({ id: couriers.id, name: couriers.name })
+    .from(couriers)
+    .where(eq(couriers.id, courierId))
+    .for('no key update');
+  return row;
+}
+
+// Активные доставки курьера, кроме заказа, который сейчас меняем.
+export async function countActiveDeliveries(
+  tx: Transaction,
+  courierId: number,
+  exceptOrderId: number,
+): Promise<number> {
+  const [row] = await tx
+    .select({ value: count() })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.courierId, courierId),
+        inArray(orders.status, [...ACTIVE_DELIVERY_STATUSES]),
+        ne(orders.id, exceptOrderId),
+      ),
+    );
+  return row?.value ?? 0;
+}
+
+export type OrderChange = Partial<Pick<typeof orders.$inferInsert, 'status' | 'courierId'>>;
+
+// Compare-and-set: изменение применится, только если версия всё ещё та, что мы прочитали.
+// Возвращает новую версию или undefined, если заказ уже успел измениться.
+export async function applyOrderChange(
+  tx: Transaction,
+  orderId: number,
+  expectedVersion: number,
+  change: OrderChange,
+): Promise<number | undefined> {
+  const [row] = await tx
+    .update(orders)
+    .set({ ...change, version: sql`${orders.version} + 1`, updatedAt: sql`now()` })
+    .where(and(eq(orders.id, orderId), eq(orders.version, expectedVersion)))
+    .returning({ version: orders.version });
+  return row?.version;
+}
+
+export async function insertOrderEvent(
+  tx: Transaction,
+  event: typeof orderEvents.$inferInsert,
+): Promise<void> {
+  await tx.insert(orderEvents).values(event);
 }

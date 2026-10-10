@@ -19,10 +19,33 @@ export class AppError extends Error {
   }
 }
 
-export function unauthorized(message = 'Authentication required'): AppError {
+export function unauthorized(message = 'Требуется вход в систему'): AppError {
   return new AppError(401, 'UNAUTHORIZED', message);
 }
 
-export function notFound(message = 'Resource not found'): AppError {
+export function notFound(message = 'Не найдено'): AppError {
   return new AppError(404, 'NOT_FOUND', message);
+}
+
+// 409: запрос корректен, но противоречит текущему состоянию (бизнес-правило).
+export function conflict(
+  code: string,
+  message: string,
+  extensions: Record<string, unknown> = {},
+): AppError {
+  return new AppError(409, code, message, extensions);
+}
+
+// 412: версия из If-Match устарела — заказ уже изменил кто-то другой.
+export function preconditionFailed(message: string, extensions: Record<string, unknown>): AppError {
+  return new AppError(412, 'VERSION_CONFLICT', message, extensions);
+}
+
+// 428: изменение без If-Match запрещено — иначе нечем обнаружить конфликт.
+export function preconditionRequired(): AppError {
+  return new AppError(
+    428,
+    'PRECONDITION_REQUIRED',
+    'Нужен заголовок If-Match с версией заказа (ETag): без него нельзя обнаружить конфликт изменений',
+  );
 }

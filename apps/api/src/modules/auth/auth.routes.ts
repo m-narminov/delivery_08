@@ -18,7 +18,7 @@ export const authRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
     },
     async (request, reply) => {
       const operator = await authenticateOperator(app.db, request.body);
-      if (!operator) throw unauthorized('Invalid operator or password');
+      if (!operator) throw unauthorized('Неверный оператор или пароль');
 
       const token = await reply.jwtSign({ operatorId: operator.id, name: operator.name });
       reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions(app.config));

@@ -269,7 +269,7 @@ describe('GET /api/orders/:id — карточка', () => {
     expect(response.statusCode).toBe(404);
     expect(response.json<{ code: string; detail: string }>()).toMatchObject({
       code: 'NOT_FOUND',
-      detail: 'Order 999999 not found',
+      detail: 'Заказ 999999 не найден',
     });
   });
 

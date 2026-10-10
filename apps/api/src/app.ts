@@ -1,3 +1,4 @@
+import './zod-locale';
 import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyBaseLogger } from 'fastify';
 import {

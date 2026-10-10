@@ -72,7 +72,7 @@ function toProblem(error: unknown, instance: string): Problem {
     return problem(error.status, error.code, error.message, instance, error.extensions);
   }
   if (hasZodFastifySchemaValidationErrors(error)) {
-    return problem(400, 'VALIDATION_FAILED', 'Request validation failed', instance, {
+    return problem(400, 'VALIDATION_FAILED', 'Проверьте данные запроса', instance, {
       errors: error.validation.map((issue) => ({
         location: error.validationContext,
         path: issue.instancePath,

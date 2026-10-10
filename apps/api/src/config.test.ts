@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { EXAMPLE_JWT_SECRET, loadConfig } from './config';
 
 const VALID_ENV = {
@@ -45,6 +46,16 @@ describe('loadConfig', () => {
 
   it('не принимает неизвестный LOG_LEVEL', () => {
     expect(() => loadConfig({ ...VALID_ENV, LOG_LEVEL: 'verbose' })).toThrow(/LOG_LEVEL/);
+  });
+
+  it('ошибки конфигурации — системные, на английском, даже при включённой русской локали zod', () => {
+    // Как в работающем приложении: app.ts включает русскую локаль глобально.
+    z.config(z.locales.ru());
+    try {
+      expect(() => loadConfig({ DATABASE_URL: VALID_ENV.DATABASE_URL })).toThrow(/^[^а-яё]*$/i);
+    } finally {
+      z.config(z.locales.en());
+    }
   });
 
   it('не принимает невалидный DATABASE_URL', () => {

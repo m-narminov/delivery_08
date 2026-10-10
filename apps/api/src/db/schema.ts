@@ -13,7 +13,8 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-// Все id — bigint identity, в JS — number (почему: docs/learning/ids-bigint.md).
+// Все id — bigint identity: короткий номер для оператора, последовательные значения удобны
+// для B-tree. В JS — number: точность сохраняется до 2^53, этого хватает с запасом.
 const id = () => bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity();
 const reference = (name: string) => bigint(name, { mode: 'number' });
 const timestampTz = (name: string) =>

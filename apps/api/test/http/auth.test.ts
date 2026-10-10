@@ -72,7 +72,7 @@ describe('POST /api/auth/login', () => {
     expect(response.json<ProblemBody>()).toMatchObject({
       status: 401,
       code: 'UNAUTHORIZED',
-      detail: 'Invalid operator or password',
+      detail: 'Неверный оператор или пароль',
     });
     expect(response.cookies).toHaveLength(0);
   });

@@ -16,7 +16,9 @@ const REDACT_PATHS = [
 // Логгер создаётся при импорте, раньше loadConfig(), поэтому LOG_LEVEL проверяем здесь той же
 // схемой: опечатка даёт понятное «Invalid configuration», а не внутреннюю ошибку pino.
 function levelFromEnv(): string {
-  const result = logLevelSchema.safeParse(process.env.LOG_LEVEL);
+  const result = logLevelSchema.safeParse(process.env.LOG_LEVEL, {
+    error: z.locales.en().localeError,
+  });
   if (!result.success) {
     throw new Error(`Invalid configuration:\n${z.prettifyError(result.error)}`);
   }

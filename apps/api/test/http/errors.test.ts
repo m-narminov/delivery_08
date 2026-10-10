@@ -85,6 +85,20 @@ describe('формат ошибок (RFC 9457 problem+json)', () => {
     expect(body.errors?.every(({ location }) => location === 'body')).toBe(true);
   });
 
+  it('тексты для пользователя — по-русски: detail и сообщения по полям', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { operatorId: 'abc', password: '' },
+    });
+    const body = response.json<ProblemBody>();
+    expect(body.detail).toBe('Проверьте данные запроса');
+    // Две ошибки: operatorId не число и пустой пароль. Без проверки длины every на пустом
+    // массиве вернул бы true и тест прошёл бы впустую.
+    expect(body.errors).toHaveLength(2);
+    expect(body.errors?.every(({ message }) => /[а-яё]/i.test(message))).toBe(true);
+  });
+
   it('битый JSON → 400 со стабильным кодом, без внутренних кодов Fastify', async () => {
     const response = await app.inject({
       method: 'POST',
