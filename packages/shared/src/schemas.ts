@@ -72,9 +72,26 @@ export const loginBodySchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+// Ответы API. Пароль и его хеш в DTO не входят никогда.
+export const operatorSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  email: z.string(),
+});
+
+// Для выпадающего списка на экране входа: только id и имя.
+export const operatorOptionSchema = operatorSchema.pick({ id: true, name: true });
+
+export const sessionSchema = z.object({
+  operator: operatorSchema,
+});
+
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type OrderSortOption = (typeof ORDER_SORT_OPTIONS)[number];
 export type TransitionBody = z.infer<typeof transitionBodySchema>;
 export type CourierBody = z.infer<typeof courierBodySchema>;
 export type CancelBody = z.infer<typeof cancelBodySchema>;
 export type LoginBody = z.infer<typeof loginBodySchema>;
+export type Operator = z.infer<typeof operatorSchema>;
+export type OperatorOption = z.infer<typeof operatorOptionSchema>;
+export type Session = z.infer<typeof sessionSchema>;
