@@ -2,8 +2,7 @@ import { loginBodySchema, sessionSchema } from '@foodster/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { unauthorized } from '../../errors';
-import { SESSION_COOKIE, sessionCookieOptions } from '../../http/session';
-import { findOperatorById, toOperatorDto } from '../operators/operators.repository';
+import { currentOperator, SESSION_COOKIE, sessionCookieOptions } from '../../http/session';
 import { authenticateOperator } from './auth.service';
 
 export const authRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
@@ -55,12 +54,7 @@ export const authRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         response: { 200: sessionSchema },
       },
     },
-    async (request) => {
-      // Оператора берём из БД, а не из токена: удалённый оператор не должен оставаться в системе.
-      const row = await findOperatorById(app.db, request.user.operatorId);
-      if (!row) throw unauthorized();
-      return { operator: toOperatorDto(row) };
-    },
+    (request) => ({ operator: currentOperator(request) }),
   );
   done();
 };

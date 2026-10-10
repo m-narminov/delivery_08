@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import Fastify, { type FastifyBaseLogger } from 'fastify';
+import Fastify, { LogController, type FastifyBaseLogger } from 'fastify';
 import {
   serializerCompiler,
   validatorCompiler,
@@ -8,6 +8,7 @@ import {
 import type { Config } from './config';
 import type { Database } from './db/client';
 import { registerErrorHandler } from './http/error-handler';
+import { protectedRoutes } from './http/protected-routes';
 import { registerSession } from './http/session';
 import { registerSwagger } from './http/swagger';
 import { logger } from './logger';
@@ -22,6 +23,7 @@ declare module 'fastify' {
   }
 }
 
+const HEALTH_PATH = '/api/health';
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_PATTERN = /^[\w-]{1,64}$/;
 
@@ -36,6 +38,11 @@ export interface AppDependencies {
 export async function buildApp({ config, db, logger: appLogger = logger }: AppDependencies) {
   const base = Fastify({
     loggerInstance: appLogger,
+    // Render опрашивает health check постоянно: автоматические записи о таких запросах
+    // (incoming request / request completed) не пишем. Явные логи маршрута остаются.
+    logController: new LogController({
+      disableRequestLogging: (request) => request.routeOptions.url === HEALTH_PATH,
+    }),
     // Id запроса попадает в каждую строку лога этого запроса. Входящий X-Request-Id
     // принимаем только в безопасном формате, иначе генерируем свой.
     requestIdHeader: false,
@@ -65,5 +72,6 @@ export async function buildApp({ config, db, logger: appLogger = logger }: AppDe
   await app.register(healthRoutes, { prefix: '/api' });
   await app.register(operatorsRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api/auth' });
+  await app.register(protectedRoutes, { prefix: '/api' });
   return app;
 }

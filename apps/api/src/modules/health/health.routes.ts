@@ -9,8 +9,6 @@ export const healthRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
   app.get(
     '/health',
     {
-      // Render опрашивает health check постоянно — не засоряем логи успешными запросами.
-      logLevel: 'warn',
       schema: {
         tags: ['system'],
         summary: 'Health check',

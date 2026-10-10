@@ -1,8 +1,10 @@
 import cookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import jwt from '@fastify/jwt';
+import type { Operator } from '@foodster/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Config } from '../config';
 import { unauthorized } from '../errors';
+import { findOperatorById, toOperatorDto } from '../modules/operators/operators.repository';
 
 export const SESSION_COOKIE = 'foodster_session';
 
@@ -20,8 +22,12 @@ declare module '@fastify/jwt' {
 
 declare module 'fastify' {
   interface FastifyInstance {
-    // Хук для защищённых маршрутов: без валидной сессии — 401.
+    // Хук для защищённых маршрутов: без валидной сессии или без оператора в БД — 401.
     authenticate: (request: FastifyRequest) => Promise<void>;
+  }
+  interface FastifyRequest {
+    // Заполняет authenticate; вне защищённых маршрутов — null.
+    operator: Operator | null;
   }
 }
 
@@ -49,11 +55,27 @@ export async function registerSession(app: FastifyInstance, config: Config): Pro
     sign: { expiresIn: `${config.SESSION_TTL_HOURS}h` },
   });
 
+  // Начальное значение null, а не объект: один объект достался бы всем запросам сразу.
+  app.decorateRequest('operator', null);
+
   app.decorate('authenticate', async (request: FastifyRequest) => {
+    let session: SessionPayload;
     try {
-      await request.jwtVerify();
+      session = await request.jwtVerify<SessionPayload>();
     } catch {
       throw unauthorized();
     }
+    // Подпись проверяет только, что токен выдали мы. Оператора берём из БД: удалённый
+    // оператор не должен оставаться в системе, а audit должен ссылаться на существующего.
+    const row = await findOperatorById(app.db, session.operatorId);
+    if (!row) throw unauthorized();
+    request.operator = toOperatorDto(row);
   });
+}
+
+// Оператор текущего запроса. На защищённых маршрутах его гарантирует authenticate;
+// если хук забыли подключить — 401, а не TypeError и 500.
+export function currentOperator(request: FastifyRequest): Operator {
+  if (!request.operator) throw unauthorized();
+  return request.operator;
 }
