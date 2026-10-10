@@ -24,6 +24,8 @@ export const ERROR_CODES = [
   'VERSION_CONFLICT',
   // 428: изменение без If-Match
   'PRECONDITION_REQUIRED',
+  // 429: у оператора уже открыто максимальное число потоков live-обновлений
+  'STREAM_LIMIT_REACHED',
   'INTERNAL_ERROR',
   // 503: база данных недоступна или перегружена, можно повторить позже
   'SERVICE_UNAVAILABLE',

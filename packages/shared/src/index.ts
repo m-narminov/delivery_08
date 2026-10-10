@@ -28,6 +28,7 @@ export {
   type RuleCheck,
 } from './order-fsm';
 export {
+  ORDER_CHANGED_EVENT,
   ORDER_SORT_OPTIONS,
   PAGE_SIZE_DEFAULT,
   PAGE_SIZE_MAX,
@@ -39,6 +40,7 @@ export {
   loginBodySchema,
   operatorOptionSchema,
   operatorSchema,
+  orderChangedEventSchema,
   orderEventSchema,
   orderListSchema,
   orderSchema,
@@ -55,6 +57,7 @@ export {
   type Operator,
   type OperatorOption,
   type Order,
+  type OrderChangedEvent,
   type OrderEvent,
   type OrderList,
   type OrderListQuery,

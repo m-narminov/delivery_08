@@ -148,6 +148,15 @@ export const orderEventSchema = z.object({
   createdAt: timestampSchema,
 });
 
+// Событие потока GET /api/stream: заказ изменился. Внутри — та же запись audit, что в истории:
+// фронт обновит данные и покажет, кто и что изменил.
+export const ORDER_CHANGED_EVENT = 'order.changed';
+
+export const orderChangedEventSchema = z.object({
+  orderId: idSchema,
+  event: orderEventSchema,
+});
+
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type OrderSortOption = (typeof ORDER_SORT_OPTIONS)[number];
 export type TransitionBody = z.infer<typeof transitionBodySchema>;
@@ -162,3 +171,4 @@ export type Courier = z.infer<typeof courierSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type OrderList = z.infer<typeof orderListSchema>;
 export type OrderEvent = z.infer<typeof orderEventSchema>;
+export type OrderChangedEvent = z.infer<typeof orderChangedEventSchema>;
