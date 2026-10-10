@@ -10,6 +10,13 @@ export const idParamSchema = z.coerce.number().int().positive();
 
 const idSchema = z.number().int().positive();
 
+// Postgres не может сохранить или сравнить текст с символом NUL (\u0000): запрос падает с ошибкой
+// кодировки, и клиент получил бы 500. Такой текст — ошибка клиента, отсекаем его при проверке.
+function withoutNul(value: string): boolean {
+  return !value.includes('\u0000');
+}
+const NUL_MESSAGE = 'Текст содержит недопустимый символ NUL';
+
 export const ORDER_SORT_OPTIONS = [
   'createdAt:desc',
   'createdAt:asc',
@@ -40,6 +47,7 @@ export const orderListQuerySchema = z.object({
   // Пустой поиск (?q=) равнозначен отсутствию поиска.
   q: z
     .string()
+    .refine(withoutNul, NUL_MESSAGE)
     .trim()
     .max(SEARCH_QUERY_MAX_LENGTH)
     .transform((value) => value || undefined)
@@ -63,6 +71,7 @@ export const cancelBodySchema = z.object({
   // в Postgres — в символах, которых не больше. Прошедшее проверку всегда влезет в БД.
   reason: z
     .string()
+    .refine(withoutNul, NUL_MESSAGE)
     .trim()
     .max(CANCEL_REASON_MAX_LENGTH)
     .optional()
@@ -89,7 +98,7 @@ export const sessionSchema = z.object({
 });
 
 // Справочники.
-const referenceSchema = z.object({ id: idSchema, name: z.string() });
+export const referenceSchema = z.object({ id: idSchema, name: z.string() });
 
 export const restaurantSchema = referenceSchema;
 

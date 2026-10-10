@@ -51,6 +51,10 @@ describe('orderListQuerySchema', () => {
   it('ограничивает длину поиска', () => {
     expect(orderListQuerySchema.safeParse({ q: 'а'.repeat(201) }).success).toBe(false);
   });
+
+  it('отклоняет символ NUL в поиске', () => {
+    expect(orderListQuerySchema.safeParse({ q: 'ленина\u0000' }).success).toBe(false);
+  });
 });
 
 describe('cancelBodySchema', () => {
@@ -71,6 +75,10 @@ describe('cancelBodySchema', () => {
   it('допускает ровно 2000 символов и отклоняет 2001', () => {
     expect(cancelBodySchema.safeParse({ reason: 'я'.repeat(2000) }).success).toBe(true);
     expect(cancelBodySchema.safeParse({ reason: 'я'.repeat(2001) }).success).toBe(false);
+  });
+
+  it('отклоняет символ NUL в причине', () => {
+    expect(cancelBodySchema.safeParse({ reason: 'клиент\u0000передумал' }).success).toBe(false);
   });
 });
 

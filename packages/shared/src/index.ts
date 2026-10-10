@@ -44,6 +44,7 @@ export {
   orderSchema,
   orderListQuerySchema,
   orderStatusSchema,
+  referenceSchema,
   restaurantSchema,
   sessionSchema,
   transitionBodySchema,
@@ -62,3 +63,18 @@ export {
   type Session,
   type TransitionBody,
 } from './schemas';
+export {
+  ERROR_CODES,
+  PROBLEM_CONTENT_TYPE,
+  badRequestProblemSchema,
+  courierLimitProblemSchema,
+  problemSchema,
+  validationIssueSchema,
+  versionConflictProblemSchema,
+  type BadRequestProblem,
+  type CourierLimitProblem,
+  type ErrorCode,
+  type Problem,
+  type ValidationIssue,
+  type VersionConflictProblem,
+} from './problem';
