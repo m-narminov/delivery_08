@@ -1,6 +1,13 @@
 export { ORDER_STATUSES, type OrderStatus } from './order-status';
 export { ORDER_EVENT_ACTIONS, type OrderEventAction } from './order-events';
 export {
+  normalizeSearchText,
+  searchVariants,
+  toCyrillicLayout,
+  toLatinLayout,
+  transliterateToCyrillic,
+} from './search';
+export {
   ACTIVE_DELIVERY_STATUSES,
   CANCEL_REASON_MAX_LENGTH,
   COURIER_EDITABLE_STATUSES,
