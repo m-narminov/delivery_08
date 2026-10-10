@@ -10,8 +10,9 @@ services:
       POSTGRES_PASSWORD: foodster
       POSTGRES_DB: foodster
     command: ['postgres', '-c', 'max_connections=100']
+    # 127.0.0.1: порт доступен только с этой машины, а не всей локальной сети — пароль тут демо.
     ports:
-      - '${DEV_DB_PORT:-5432}:5432'
+      - '127.0.0.1:${DEV_DB_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql
     deploy:
@@ -40,7 +41,7 @@ services:
       POSTGRES_PASSWORD: foodster
       POSTGRES_DB: foodster_test
     ports:
-      - '${TEST_DB_PORT:-5433}:5432'
+      - '127.0.0.1:${TEST_DB_PORT:-5433}:5432'
     volumes:
       - type: tmpfs
         target: /var/lib/postgresql
@@ -85,7 +86,7 @@ services:
       - --appendonly
       - 'no'
     ports:
-      - '${VALKEY_PORT:-6379}:6379'
+      - '127.0.0.1:${VALKEY_PORT:-6379}:6379'
     deploy:
       resources:
         limits:
