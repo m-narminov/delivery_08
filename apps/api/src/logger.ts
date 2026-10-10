@@ -14,32 +14,46 @@ const REDACT_PATHS = [
   'res.headers["set-cookie"]',
 ];
 
-// Ошибка запроса Drizzle хранит значения параметров и в поле params, и в тексте сообщения
-// (а значит, и в stack): «Failed query: … params: …». Там бывают хеши паролей (seed) и данные
-// клиентов, а redact по путям текст сообщения не чистит. В лог идёт копия без значений:
-// текст SQL с плейсхолдерами $1, $2 и причина (ошибка Postgres) остаются.
-function withoutQueryParams(error: Error): Error {
+// Копия ошибки с тем же прототипом и полями (message и stack — тоже: они неперечисляемые).
+function cloneError(error: Error): Error {
+  const copy = Object.create(Object.getPrototypeOf(error) as object) as Error;
+  Object.defineProperties(copy, Object.getOwnPropertyDescriptors(error));
+  return copy;
+}
+
+// Перед записью в лог из ошибки убираются данные, которые redact по путям не находит:
+// - ошибка запроса Drizzle хранит значения параметров и в поле params, и в тексте сообщения
+//   (а значит, и в stack): «Failed query: … params: …». Там бывают хеши паролей (seed)
+//   и данные клиентов. Остаются текст SQL с плейсхолдерами $1, $2 и причина;
+// - ошибка ответа Valkey (ioredis) несёт поле command с аргументами команды: в HELLO … AUTH
+//   это пароль, в SET — закэшированные данные.
+// Проверяется вся цепочка cause: pino выводит сообщения всех причин.
+function redactError(error: Error): Error {
   if (error instanceof DrizzleQueryError) {
-    const safe = new Error(`Failed query: ${error.query}`, { cause: error.cause });
+    const safe = new Error(`Failed query: ${error.query}`, {
+      cause: error.cause instanceof Error ? redactError(error.cause) : error.cause,
+    });
     safe.name = 'DrizzleQueryError';
     if (error.stack) safe.stack = error.stack.replace(error.message, safe.message);
     return safe;
   }
-  // Ошибка Drizzle может оказаться и причиной другой ошибки: pino выводит сообщения всей цепочки.
+  let result = error;
+  if (Object.hasOwn(error, 'command')) {
+    result = cloneError(error);
+    delete (result as Error & { command?: unknown }).command;
+  }
   if (error.cause instanceof Error) {
-    const cause = withoutQueryParams(error.cause);
+    const cause = redactError(error.cause);
     if (cause !== error.cause) {
-      const copy = Object.create(Object.getPrototypeOf(error) as object) as Error;
-      Object.defineProperties(copy, Object.getOwnPropertyDescriptors(error));
-      copy.cause = cause;
-      return copy;
+      if (result === error) result = cloneError(error);
+      result.cause = cause;
     }
   }
-  return error;
+  return result;
 }
 
 function serializeError(value: unknown): unknown {
-  return value instanceof Error ? pino.stdSerializers.err(withoutQueryParams(value)) : value;
+  return value instanceof Error ? pino.stdSerializers.err(redactError(value)) : value;
 }
 
 // Логгер создаётся при импорте, раньше loadConfig(), поэтому LOG_LEVEL проверяем здесь той же

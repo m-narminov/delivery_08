@@ -61,6 +61,23 @@ describe('logger', () => {
     expect(lines).toHaveLength(2);
   });
 
+  it('у ошибки Valkey не пишет аргументы команды: в HELLO … AUTH там пароль', () => {
+    const { lines, logger } = captureLogs();
+    // Так ioredis оформляет ошибку ответа сервера (DataHandler.returnError).
+    const replyError = Object.assign(new Error('WRONGPASS invalid username-password pair'), {
+      command: { name: 'hello', args: ['3', 'AUTH', 'default', 'valkey-secret-password'] },
+    });
+    logger.warn({ err: replyError }, 'Valkey connection error');
+    logger.warn({ err: new Error('Cache read failed', { cause: replyError }) }, 'Wrapped');
+
+    for (const line of lines) {
+      const text = JSON.stringify(line);
+      expect(text).not.toContain('valkey-secret-password');
+      expect(text).toContain('WRONGPASS');
+    }
+    expect(lines).toHaveLength(2);
+  });
+
   it('не пишет сообщения ниже заданного уровня', () => {
     const { lines, logger } = captureLogs();
     logger.debug('details');
