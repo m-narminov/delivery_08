@@ -49,8 +49,9 @@ export const orderListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
 });
 
+// Отмена — отдельный эндпоинт с причиной, поэтому через переходы её не делаем.
 export const transitionBodySchema = z.object({
-  to: orderStatusSchema,
+  to: orderStatusSchema.exclude(['cancelled']),
 });
 
 export const courierBodySchema = z.object({

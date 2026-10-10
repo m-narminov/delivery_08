@@ -4,6 +4,7 @@ import {
   courierBodySchema,
   idParamSchema,
   orderListQuerySchema,
+  transitionBodySchema,
 } from './schemas';
 
 describe('orderListQuerySchema', () => {
@@ -94,5 +95,15 @@ describe('idParamSchema', () => {
 
   it('приводит строку к числу', () => {
     expect(idParamSchema.parse('42')).toBe(42);
+  });
+});
+
+describe('transitionBodySchema', () => {
+  it('принимает статус цепочки', () => {
+    expect(transitionBodySchema.parse({ to: 'ready' })).toEqual({ to: 'ready' });
+  });
+
+  it('не принимает cancelled — для отмены отдельный эндпоинт', () => {
+    expect(transitionBodySchema.safeParse({ to: 'cancelled' }).success).toBe(false);
   });
 });
