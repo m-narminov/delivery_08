@@ -1,13 +1,16 @@
+import type { ErrorCode } from '@foodster/shared';
+
 // Ожидаемая ошибка с HTTP-статусом и машинным кодом. Обработчик ошибок превращает её
 // в ответ application/problem+json (RFC 9457); фронт показывает текст по полю code.
+// Коды — из общего списка ERROR_CODES: опечатка в коде не скомпилируется.
 export class AppError extends Error {
   readonly status: number;
-  readonly code: string;
+  readonly code: ErrorCode;
   readonly extensions: Record<string, unknown>;
 
   constructor(
     status: number,
-    code: string,
+    code: ErrorCode,
     message: string,
     extensions: Record<string, unknown> = {},
   ) {
@@ -29,7 +32,7 @@ export function notFound(message = 'Не найдено'): AppError {
 
 // 409: запрос корректен, но противоречит текущему состоянию (бизнес-правило).
 export function conflict(
-  code: string,
+  code: ErrorCode,
   message: string,
   extensions: Record<string, unknown> = {},
 ): AppError {

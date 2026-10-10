@@ -7,16 +7,11 @@ import {
   createTestApp,
   insertOperator,
   loginAs,
+  problemBody,
   TEST_PASSWORD,
   testConfig,
   type TestApp,
 } from '../app';
-
-interface ProblemBody {
-  status: number;
-  code: string;
-  detail: string;
-}
 
 let app: TestApp;
 let db: Database;
@@ -69,7 +64,7 @@ describe('POST /api/auth/login', () => {
     });
     expect(response.statusCode).toBe(401);
     expect(response.headers['content-type']).toContain('application/problem+json');
-    expect(response.json<ProblemBody>()).toMatchObject({
+    expect(problemBody(response)).toMatchObject({
       status: 401,
       code: 'UNAUTHORIZED',
       detail: 'Неверный оператор или пароль',
@@ -82,7 +77,7 @@ describe('GET /api/auth/me', () => {
   it('без cookie — 401', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/auth/me' });
     expect(response.statusCode).toBe(401);
-    expect(response.json<ProblemBody>().code).toBe('UNAUTHORIZED');
+    expect(problemBody(response).code).toBe('UNAUTHORIZED');
   });
 
   it('с cookie после входа — текущий оператор', async () => {

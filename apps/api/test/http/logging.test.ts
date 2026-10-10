@@ -70,3 +70,46 @@ describe('журнал запросов', () => {
     }
   });
 });
+
+describe('безопасность в логах', () => {
+  it('неудачный вход записывается как warn с id оператора, но без пароля', async () => {
+    const { lines, logger } = captureLogger('info');
+    const app = await buildApp({ config: testConfig(), db: testDb.db, logger });
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { operatorId: 999_999, password: 'guessed-password' },
+      });
+      expect(lines.find((line) => line.msg === 'Login failed')).toMatchObject({
+        level: 40,
+        operatorId: 999_999,
+      });
+      expect(JSON.stringify(lines)).not.toContain('guessed-password');
+    } finally {
+      await app.close();
+    }
+  });
+
+  // inject() подключается с адреса 127.0.0.1 — он и играет роль прокси.
+  it.each([
+    ['прокси не задан — X-Forwarded-For игнорируется', undefined, '127.0.0.1'],
+    ['запрос от доверенного прокси — IP клиента из X-Forwarded-For', '127.0.0.1', '203.0.113.7'],
+    ['запрос не от доверенного прокси — заголовок игнорируется', '10.0.0.1', '127.0.0.1'],
+  ])('%s', async (_case, trustProxy, expectedIp) => {
+    const { lines, logger } = captureLogger('info');
+    const config = testConfig({ TRUST_PROXY: trustProxy });
+    const app = await buildApp({ config, db: testDb.db, logger });
+    try {
+      await app.inject({
+        method: 'GET',
+        url: '/api/operators',
+        headers: { 'x-forwarded-for': '203.0.113.7' },
+      });
+      const incoming = lines.find((line) => line.msg === 'incoming request');
+      expect(incoming?.req).toMatchObject({ remoteAddress: expectedIp });
+    } finally {
+      await app.close();
+    }
+  });
+});

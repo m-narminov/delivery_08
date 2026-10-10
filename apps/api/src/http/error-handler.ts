@@ -1,23 +1,15 @@
 import { STATUS_CODES } from 'node:http';
+import { PROBLEM_CONTENT_TYPE, type Problem } from '@foodster/shared';
 import type { FastifyInstance } from 'fastify';
 import {
   hasZodFastifySchemaValidationErrors,
   ResponseSerializationError,
 } from 'fastify-type-provider-zod';
+import { isDatabaseUnavailable } from '../db/errors';
 import { AppError } from '../errors';
 
-const PROBLEM_CONTENT_TYPE = 'application/problem+json';
-
-// Формат ошибки по RFC 9457 (Problem Details). code — наш машинный код для фронта.
-export interface Problem {
-  type: string;
-  title: string;
-  status: number;
-  detail: string;
-  instance: string;
-  code: string;
-  [extension: string]: unknown;
-}
+// Через сколько секунд клиенту стоит повторить запрос, если БД недоступна.
+const RETRY_AFTER_SECONDS = 5;
 
 function problem(
   status: number,
@@ -54,7 +46,7 @@ function clientErrorStatus(error: unknown): number | undefined {
     : undefined;
 }
 
-// Заголовки, которые ошибка просит выставить (например, Retry-After).
+// Заголовки, которые ошибка просит выставить (например, Retry-After у 429).
 function errorHeaders(error: unknown): Record<string, string> {
   if (!(error instanceof Error) || !('headers' in error)) return {};
   const { headers } = error;
@@ -80,6 +72,10 @@ function toProblem(error: unknown, instance: string): Problem {
       })),
     });
   }
+  // БД недоступна или перегружена — временная проблема: клиент может повторить запрос.
+  if (isDatabaseUnavailable(error)) {
+    return problem(503, 'SERVICE_UNAVAILABLE', 'Service temporarily unavailable', instance);
+  }
   // Ответ не прошёл схему — это баг сервера, а не клиента: детали только в лог.
   if (error instanceof ResponseSerializationError) {
     return problem(500, 'INTERNAL_ERROR', 'Internal server error', instance);
@@ -98,11 +94,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
     if (body.status >= 500) {
       request.log.error({ err: error }, 'Request failed');
     }
-    return reply
-      .code(body.status)
-      .headers(body.status < 500 ? errorHeaders(error) : {})
-      .type(PROBLEM_CONTENT_TYPE)
-      .send(body);
+    const headers =
+      body.status === 503
+        ? { 'retry-after': String(RETRY_AFTER_SECONDS) }
+        : body.status < 500
+          ? errorHeaders(error)
+          : {};
+    return reply.code(body.status).headers(headers).type(PROBLEM_CONTENT_TYPE).send(body);
   });
 
   app.setNotFoundHandler((request, reply) =>

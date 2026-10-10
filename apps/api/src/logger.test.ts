@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createLogger } from './logger';
 
@@ -37,6 +38,27 @@ describe('logger', () => {
     expect(line).not.toContain('session=abc');
     expect(line).not.toContain('Bearer abc');
     expect(line).toContain('[redacted]');
+  });
+
+  it('у ошибки запроса Drizzle пишет SQL и причину, но не значения параметров', () => {
+    const { lines, logger } = captureLogs();
+    const queryError = new DrizzleQueryError(
+      'insert into "operators" ("email", "password_hash") values ($1, $2)',
+      ['anna@example.com', 'scrypt$top-secret-hash'],
+      new Error('duplicate key value violates unique constraint'),
+    );
+    logger.error({ err: queryError }, 'Seed failed');
+    // Та же ошибка как причина другой ошибки.
+    logger.error({ err: new Error('Seed failed', { cause: queryError }) }, 'Wrapped');
+
+    for (const line of lines) {
+      const text = JSON.stringify(line);
+      expect(text).not.toContain('top-secret-hash');
+      expect(text).not.toContain('anna@example.com');
+      expect(text).toContain('insert into');
+      expect(text).toContain('duplicate key value');
+    }
+    expect(lines).toHaveLength(2);
   });
 
   it('не пишет сообщения ниже заданного уровня', () => {

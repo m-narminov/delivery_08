@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Database } from '../../src/db/client';
 import {
   applyOrderChange,
   insertOrderEvent,
@@ -10,6 +12,33 @@ import { insertCourier, insertOrder, insertRestaurant } from '../factories';
 
 // Блокировки на уровне репозитория: две транзакции идут строго по заданному чередованию,
 // шаги синхронизируются через Promise.withResolvers — результат не зависит от удачного тайминга.
+
+// pid серверного процесса Postgres, который обслуживает это соединение (транзакцию).
+async function backendPid(tx: Pick<Database, 'execute'>): Promise<number> {
+  const { rows } = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+  const pid = rows[0]?.pid;
+  if (pid === undefined) throw new Error('pg_backend_pid() returned no row');
+  return pid;
+}
+
+// Ждёт, пока Postgres покажет: процесс waiter заблокирован процессом holder (pg_blocking_pids).
+// Это факт из самой базы, а не догадка по таймингу. Если waiter получил блокировку, не дожидаясь
+// holder, — ошибка сразу; если не случилось ни того ни другого — таймаут Vitest.
+async function waitUntilBlocked(
+  db: Database,
+  waiter: number,
+  holder: number,
+  acquired: () => boolean,
+): Promise<void> {
+  for (;;) {
+    if (acquired()) throw new Error('the waiter acquired the lock without waiting');
+    const { rows } = await db.execute<{ blocked: boolean }>(
+      sql`select ${holder}::int = any(pg_blocking_pids(${waiter}::int)) as blocked`,
+    );
+    if (rows[0]?.blocked) return;
+    await sleep(10);
+  }
+}
 
 let testDb: TestDatabase;
 let restaurantId: number;
@@ -27,7 +56,11 @@ describe('блокировка курьера', () => {
   it('снятие курьера и переход в ready одного заказа одновременно: без deadlock, второй получает конфликт версии', async () => {
     const { db } = testDb;
     const courier = await insertCourier(db, 'Курьер C1');
-    const order = await insertOrder(db, { restaurantId, status: 'preparing', courierId: courier.id });
+    const order = await insertOrder(db, {
+      restaurantId,
+      status: 'preparing',
+      courierId: courier.id,
+    });
     const t2Locked = Promise.withResolvers<void>();
     const t1Changed = Promise.withResolvers<void>();
 
@@ -66,24 +99,27 @@ describe('блокировка курьера', () => {
   it('две блокировки одного курьера по-прежнему идут по очереди — на этом держится лимит', async () => {
     const { db } = testDb;
     const courier = await insertCourier(db, 'Курьер C2');
-    const firstLocked = Promise.withResolvers<void>();
+    const firstLocked = Promise.withResolvers<number>();
+    const secondStarted = Promise.withResolvers<number>();
     const releaseFirst = Promise.withResolvers<void>();
     let secondAcquired = false;
 
     const first = db.transaction(async (tx) => {
+      const pid = await backendPid(tx);
       await lockCourier(tx, courier.id);
-      firstLocked.resolve();
+      firstLocked.resolve(pid);
       await releaseFirst.promise;
     });
-    await firstLocked.promise;
+    const firstPid = await firstLocked.promise;
 
     const second = db.transaction(async (tx) => {
+      secondStarted.resolve(await backendPid(tx));
       await lockCourier(tx, courier.id);
       secondAcquired = true;
     });
 
-    // Пока первая транзакция открыта, вторая ждёт на строке курьера.
-    await sleep(200);
+    // Вторая транзакция стоит в очереди за первой: это видно в самой базе.
+    await waitUntilBlocked(db, await secondStarted.promise, firstPid, () => secondAcquired);
     expect(secondAcquired).toBe(false);
 
     releaseFirst.resolve();

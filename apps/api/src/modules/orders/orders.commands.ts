@@ -68,10 +68,13 @@ export interface MutationResult {
 async function versionConflict(tx: repository.Transaction, orderId: number): Promise<AppError> {
   const current = await repository.findOrderById(tx, orderId);
   const lastChange = await repository.findLastOrderEvent(tx, orderId);
-  return preconditionFailed('Заказ уже изменил другой оператор. Обновите данные и повторите действие', {
-    current: current ? toOrderDto(current) : null,
-    lastChange: lastChange ? toOrderEventDto(lastChange) : null,
-  });
+  return preconditionFailed(
+    'Заказ уже изменил другой оператор. Обновите данные и повторите действие',
+    {
+      current: current ? toOrderDto(current) : null,
+      lastChange: lastChange ? toOrderEventDto(lastChange) : null,
+    },
+  );
 }
 
 // Общий каркас любого изменения заказа — одна транзакция:
@@ -158,9 +161,11 @@ export function changeOrderCourier(
   courierId: number | null,
 ): Promise<MutationResult> {
   return mutateOrder(db, target, async (tx, order) => {
+    // Тот же курьер — менять нечего: 200 без новой версии, даже если курьера уже нельзя менять.
+    // Так повтор запроса (например, после обрыва сети) всегда безопасен — PUT идемпотентен.
+    if (courierId === order.courierId) return null;
     const check = checkCourierChange(order);
     if (!check.ok) throw ruleViolation(check.code);
-    if (courierId === order.courierId) return null;
 
     if (courierId !== null) {
       if (isActiveDelivery(order.status)) {

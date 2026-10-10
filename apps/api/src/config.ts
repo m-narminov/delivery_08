@@ -11,7 +11,11 @@ export const logLevelSchema = z
 // падает сразу с понятным сообщением, а не через час на первом запросе (fail fast).
 const configSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    // Без значения по умолчанию: окружение задаётся явно, иначе приложение не стартует.
+    // Угадывать опасно в обе стороны: «development» на сервере отключил бы проверки ниже.
+    // Локально значение приходит из .env.example, в тестах его ставит Vitest (test),
+    // на Render — env group (production).
+    NODE_ENV: z.enum(['development', 'test', 'production']),
     HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().int().positive().default(3000),
     LOG_LEVEL: logLevelSchema,
@@ -23,6 +27,12 @@ const configSchema = z
     // Выключается явно и только для локальной разработки по http://localhost.
     COOKIE_SECURE: z.stringbool().default(true),
     REDIS_URL: z.url().optional(),
+    // Адреса прокси перед приложением (у Render — балансировщик): IP или CIDR через запятую.
+    // Только от них Fastify принимает X-Forwarded-For и берёт оттуда IP клиента. Не задано —
+    // заголовку не доверяем: его может подделать любой клиент, а IP нужен для логов и
+    // ограничения частоты входа. Число прокси Fastify 5 не принимает: оно не проверяет,
+    // что запрос пришёл именно от прокси.
+    TRUST_PROXY: z.string().trim().min(1).optional(),
   })
   .superRefine((config, context) => {
     if (config.NODE_ENV === 'production' && config.JWT_SECRET === EXAMPLE_JWT_SECRET) {
@@ -30,6 +40,13 @@ const configSchema = z
         code: 'custom',
         path: ['JWT_SECRET'],
         message: 'must not be the example value from .env.example in production',
+      });
+    }
+    if (config.NODE_ENV === 'production' && !config.COOKIE_SECURE) {
+      context.addIssue({
+        code: 'custom',
+        path: ['COOKIE_SECURE'],
+        message: 'must be true in production: the session cookie must not be sent over plain HTTP',
       });
     }
   });

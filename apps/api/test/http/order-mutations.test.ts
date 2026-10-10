@@ -1,18 +1,16 @@
-import type { Courier, Order, OrderEvent, OrderStatus } from '@foodster/shared';
+import {
+  courierLimitProblemSchema,
+  versionConflictProblemSchema,
+  type Courier,
+  type Order,
+  type OrderEvent,
+  type OrderStatus,
+} from '@foodster/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Database } from '../../src/db/client';
 import { SESSION_COOKIE } from '../../src/http/session';
-import { createTestApp, insertOperator, loginAs, type TestApp } from '../app';
+import { createTestApp, insertOperator, loginAs, problemBody, type TestApp } from '../app';
 import { insertCourier, insertOrder, insertRestaurant } from '../factories';
-
-interface ProblemBody {
-  status: number;
-  code: string;
-  detail: string;
-  current?: Order;
-  lastChange?: OrderEvent | null;
-  activeDeliveries?: number;
-}
 
 let app: TestApp;
 let db: Database;
@@ -70,6 +68,15 @@ const setCourier = (id: number, courierId: number | null, ifMatch?: string) =>
 const cancel = (id: number, payload: object, ifMatch?: string) =>
   send('POST', `/api/orders/${id}/cancel`, payload, ifMatch);
 
+async function activeDeliveries(courierId: number): Promise<number | undefined> {
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/couriers',
+    cookies: { [SESSION_COOKIE]: session },
+  });
+  return response.json<Courier[]>().find((item) => item.id === courierId)?.activeDeliveries;
+}
+
 async function events(id: number): Promise<OrderEvent[]> {
   const response = await app.inject({
     method: 'GET',
@@ -88,8 +95,8 @@ describe('If-Match: обнаружение конкурентных измене
     const order = await newOrder();
     const response = await act(order.id);
     expect(response.statusCode).toBe(428);
-    expect(response.json<ProblemBody>().code).toBe('PRECONDITION_REQUIRED');
-    expect(response.json<ProblemBody>().detail).toMatch(/[а-яё]/i);
+    expect(problemBody(response).code).toBe('PRECONDITION_REQUIRED');
+    expect(problemBody(response).detail).toMatch(/[а-яё]/i);
   });
 
   it('If-Match со списком ETag: подходит любой из них', async () => {
@@ -112,7 +119,7 @@ describe('If-Match: обнаружение конкурентных измене
     // …а оператор A всё ещё видит версию 1 и пытается сделать то же самое.
     const response = await transition(order.id, 'accepted', '"v1"');
     expect(response.statusCode).toBe(412);
-    const body = response.json<ProblemBody>();
+    const body = versionConflictProblemSchema.parse(response.json());
     expect(body.code).toBe('VERSION_CONFLICT');
     expect(body.detail).toBe(
       'Заказ уже изменил другой оператор. Обновите данные и повторите действие',
@@ -133,7 +140,7 @@ describe('If-Match: обнаружение конкурентных измене
     expect((await setCourier(order.id, alex.id, '"v1"')).statusCode).toBe(200);
     const response = await setCourier(order.id, maria.id, '"v1"');
     expect(response.statusCode).toBe(412);
-    expect(response.json<ProblemBody>().current?.courier?.id).toBe(alex.id);
+    expect(versionConflictProblemSchema.parse(response.json()).current?.courier?.id).toBe(alex.id);
   });
 
   it('слабый ETag в If-Match не подходит (RFC 9110: только строгое сравнение) → 412', async () => {
@@ -154,7 +161,10 @@ describe('If-Match: обнаружение конкурентных измене
 describe('POST /api/orders/:id/transitions', () => {
   it('следующий статус: версия +1, новый ETag, запись в audit от оператора', async () => {
     // Заведомо старое время изменения: сравнение не зависит от того, уложились ли в 1 мс.
-    const order = await insertOrder(db, { restaurantId, updatedAt: new Date('2026-01-01T00:00:00Z') });
+    const order = await insertOrder(db, {
+      restaurantId,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    });
     const response = await transition(order.id, 'accepted', '"v1"');
     expect(response.statusCode).toBe(200);
     expect(response.headers.etag).toBe('"v2"');
@@ -188,7 +198,7 @@ describe('POST /api/orders/:id/transitions', () => {
     const order = await newOrder();
     const response = await transition(order.id, 'ready', '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<ProblemBody>()).toMatchObject({
+    expect(problemBody(response)).toMatchObject({
       code: 'TRANSITION_NOT_ALLOWED',
       detail: 'Такой переход статуса недоступен',
     });
@@ -203,7 +213,7 @@ describe('POST /api/orders/:id/transitions', () => {
     const order = await newOrder('ready');
     const response = await transition(order.id, 'picked_up', '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<ProblemBody>().code).toBe('COURIER_REQUIRED');
+    expect(problemBody(response).code).toBe('COURIER_REQUIRED');
   });
 
   it('cancelled через переходы → 400: для отмены отдельный эндпоинт', async () => {
@@ -237,13 +247,32 @@ describe('PUT /api/orders/:id/courier', () => {
     });
   });
 
-  it('тот же курьер повторно — 200 без изменений: версия прежняя, audit пуст', async () => {
+  // Повтор того же запроса (например, после обрыва сети) безопасен — даже когда курьера
+  // менять уже нельзя: менять нечего, значит, и правило не нарушено.
+  it.each(['preparing', 'picked_up', 'delivered'] as const)(
+    'тот же курьер повторно в %s — 200 без изменений: версия прежняя, audit пуст',
+    async (status) => {
+      const courier = await newCourier();
+      const order = await newOrder(status, courier.id);
+      const response = await setCourier(order.id, courier.id, '"v1"');
+      expect(response.statusCode).toBe(200);
+      expect(response.json<Order>().version).toBe(1);
+      expect(await events(order.id)).toEqual([]);
+    },
+  );
+
+  it('снятие курьера с заказа в ready освобождает место у курьера', async () => {
     const courier = await newCourier();
-    const order = await newOrder('preparing', courier.id);
-    const response = await setCourier(order.id, courier.id, '"v1"');
+    const order = await newOrder('ready', courier.id);
+    expect(await activeDeliveries(courier.id)).toBe(1);
+
+    const response = await setCourier(order.id, null, '"v1"');
     expect(response.statusCode).toBe(200);
-    expect(response.json<Order>().version).toBe(1);
-    expect(await events(order.id)).toEqual([]);
+    expect(response.json<Order>()).toMatchObject({ courier: null, version: 2, status: 'ready' });
+    expect(await events(order.id)).toMatchObject([
+      { action: 'courier_unassigned', fromCourier: { id: courier.id }, toCourier: null },
+    ]);
+    expect(await activeDeliveries(courier.id)).toBe(0);
   });
 
   // Два пути кода: для заказа в ready курьер проверяется вместе с лимитом, для остальных — отдельно.
@@ -253,7 +282,7 @@ describe('PUT /api/orders/:id/courier', () => {
       const order = await newOrder(status);
       const response = await setCourier(order.id, 999_999, '"v1"');
       expect(response.statusCode).toBe(404);
-      expect(response.json<ProblemBody>()).toMatchObject({
+      expect(problemBody(response)).toMatchObject({
         code: 'COURIER_NOT_FOUND',
         detail: 'Курьер 999999 не найден',
       });
@@ -266,7 +295,7 @@ describe('PUT /api/orders/:id/courier', () => {
     const order = await newOrder('picked_up', courier.id);
     const response = await setCourier(order.id, other.id, '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<ProblemBody>().code).toBe('COURIER_NOT_EDITABLE');
+    expect(problemBody(response).code).toBe('COURIER_NOT_EDITABLE');
   });
 });
 
@@ -284,7 +313,7 @@ describe('лимит: не больше 3 активных доставок у �
     const order = await newOrder('ready');
     const response = await setCourier(order.id, courier.id, '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<unknown>()).toMatchObject({
+    expect(courierLimitProblemSchema.parse(response.json())).toMatchObject({
       code: 'COURIER_LIMIT_REACHED',
       detail: 'У курьера уже максимум активных доставок: 3',
       activeDeliveries: 3,
@@ -312,7 +341,7 @@ describe('лимит: не больше 3 активных доставок у �
     const order = await newOrder('preparing', courier.id);
     const response = await transition(order.id, 'ready', '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<ProblemBody>().code).toBe('COURIER_LIMIT_REACHED');
+    expect(problemBody(response).code).toBe('COURIER_LIMIT_REACHED');
   });
 
   it('после доставки одного заказа место освобождается', async () => {
@@ -341,16 +370,15 @@ describe('POST /api/orders/:id/cancel', () => {
       courier: { id: courier.id },
     });
     expect(await events(order.id)).toMatchObject([
-      { action: 'cancelled', fromStatus: 'ready', toStatus: 'cancelled', reason: 'Клиент передумал' },
+      {
+        action: 'cancelled',
+        fromStatus: 'ready',
+        toStatus: 'cancelled',
+        reason: 'Клиент передумал',
+      },
     ]);
 
-    const couriers = await app.inject({
-      method: 'GET',
-      url: '/api/couriers',
-      cookies: { [SESSION_COOKIE]: session },
-    });
-    const updated = couriers.json<Courier[]>().find((item) => item.id === courier.id);
-    expect(updated?.activeDeliveries).toBe(0);
+    expect(await activeDeliveries(courier.id)).toBe(0);
   });
 
   it('без причины — reason null', async () => {
@@ -364,7 +392,7 @@ describe('POST /api/orders/:id/cancel', () => {
     const order = await newOrder(status, courier.id);
     const response = await cancel(order.id, {}, '"v1"');
     expect(response.statusCode).toBe(409);
-    expect(response.json<ProblemBody>()).toMatchObject({
+    expect(problemBody(response)).toMatchObject({
       code: 'TRANSITION_NOT_ALLOWED',
       detail: 'Заказ уже передан курьеру или завершён — отменить нельзя',
     });
@@ -378,6 +406,13 @@ describe('POST /api/orders/:id/cancel', () => {
   it('причина длиннее 2000 символов → 400', async () => {
     const order = await newOrder();
     expect((await cancel(order.id, { reason: 'я'.repeat(2001) }, '"v1"')).statusCode).toBe(400);
+  });
+
+  it('символ NUL в причине → 400, а не 500 от Postgres', async () => {
+    const order = await newOrder();
+    const response = await cancel(order.id, { reason: 'клиент\u0000передумал' }, '"v1"');
+    expect(response.statusCode).toBe(400);
+    expect(problemBody(response).code).toBe('VALIDATION_FAILED');
   });
 });
 
@@ -399,14 +434,26 @@ describe('гонки: одновременные запросы', () => {
       setCourier(second.id, courier.id, '"v1"'),
     ]);
     expect(statuses(responses)).toEqual([200, 409]);
+    expect(await activeDeliveries(courier.id)).toBe(3);
+  });
 
-    const couriers = await app.inject({
-      method: 'GET',
-      url: '/api/couriers',
-      cookies: { [SESSION_COOKIE]: session },
-    });
-    const found = couriers.json<Courier[]>().find((item) => item.id === courier.id);
-    expect(found?.activeDeliveries).toBe(3);
+  it('переход в ready и назначение того же курьера одновременно: третье место достаётся одному', async () => {
+    const courier = await newCourier();
+    await newOrder('ready', courier.id);
+    await newOrder('picked_up', courier.id);
+    // Оба пути занимают последнее место: свой заказ курьера становится ready…
+    const preparing = await newOrder('preparing', courier.id);
+    // …и чужой заказ в ready получает этого курьера.
+    const ready = await newOrder('ready');
+
+    const responses = await Promise.all([
+      transition(preparing.id, 'ready', '"v1"'),
+      setCourier(ready.id, courier.id, '"v1"'),
+    ]);
+    expect(statuses(responses)).toEqual([200, 409]);
+    const rejected = responses.find((response) => response.statusCode === 409);
+    expect(rejected && problemBody(rejected).code).toBe('COURIER_LIMIT_REACHED');
+    expect(await activeDeliveries(courier.id)).toBe(3);
   });
 
   it('два изменения одного заказа с одной версией: одно 200, другое 412; одна запись audit', async () => {
@@ -417,6 +464,13 @@ describe('гонки: одновременные запросы', () => {
     ]);
     expect(statuses(responses)).toEqual([200, 412]);
     expect(await events(order.id)).toHaveLength(1);
+
+    // Проигравший получает актуальный заказ, даже если конфликт обнаружен только в UPDATE
+    // (compare-and-set), а не при первой проверке версии: оба пути отвечают одинаково.
+    const rejected = responses.find((response) => response.statusCode === 412);
+    const body = versionConflictProblemSchema.parse(rejected?.json());
+    expect(body.current?.version).toBe(2);
+    expect(body.lastChange).toMatchObject({ orderVersion: 2, actor: { id: operatorId } });
   });
 
   it('одновременный обмен курьерами между двумя заказами — без 500 (раньше был deadlock)', async () => {

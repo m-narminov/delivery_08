@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { problemSchema, type Problem } from '@foodster/shared';
 import { buildApp } from '../src/app';
 import { hashPassword } from '../src/auth/password';
 import type { Config } from '../src/config';
@@ -20,6 +21,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     SESSION_TTL_HOURS: 12,
     COOKIE_SECURE: false,
     REDIS_URL: undefined,
+    TRUST_PROXY: undefined,
     ...overrides,
   };
 }
@@ -55,6 +57,12 @@ export async function insertOperator(
     .returning();
   if (!row) throw new Error('operator was not inserted');
   return row;
+}
+
+// Тело ошибки, проверенное общей схемой из shared: если ответ разойдётся с контрактом,
+// тест упадёт здесь, а не на фронте.
+export function problemBody(response: { json: () => unknown }): Problem {
+  return problemSchema.parse(response.json());
 }
 
 // Входит под оператором и возвращает значение cookie сессии для следующих запросов.

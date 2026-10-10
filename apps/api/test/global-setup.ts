@@ -1,9 +1,13 @@
 import { createDatabase } from '../src/db/client';
 import { runMigrations } from '../src/db/migrations';
+import { requireEnv } from '../src/env';
 import { databaseUrl, TEMPLATE_DATABASE, TEST_DATABASE_PREFIX, withAdminClient } from './db';
 
 // Выполняется один раз перед всеми тестами: пересоздаёт шаблонную БД со свежими миграциями.
 export default async function setup(): Promise<void> {
+  // Переменная проверяется до подключения: если её нет, ошибка должна сказать именно это,
+  // а не «БД недоступна».
+  requireEnv('TEST_DATABASE_URL');
   try {
     await withAdminClient(async (client) => {
       // Остатки прошлых прогонов, если тесты были прерваны.

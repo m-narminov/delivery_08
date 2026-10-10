@@ -47,6 +47,8 @@ export async function buildApp({ config, db, logger: appLogger = logger }: AppDe
     // Id запроса попадает в каждую строку лога этого запроса. Входящий X-Request-Id
     // принимаем только в безопасном формате, иначе генерируем свой.
     requestIdHeader: false,
+    // За прокси IP клиента — в X-Forwarded-For; заголовок принимаем только от указанных прокси.
+    trustProxy: config.TRUST_PROXY ?? false,
     genReqId: (request) => {
       const incoming = request.headers[REQUEST_ID_HEADER];
       return typeof incoming === 'string' && REQUEST_ID_PATTERN.test(incoming)
@@ -63,6 +65,12 @@ export async function buildApp({ config, db, logger: appLogger = logger }: AppDe
   base.addHook('onRequest', (request, reply, done) => {
     reply.header(REQUEST_ID_HEADER, request.id);
     done();
+  });
+  // Ответы API — данные под сессией оператора, которые быстро устаревают: по умолчанию их
+  // не хранит ни браузер, ни прокси. Маршрут может задать своё (карточка заказа — с ETag).
+  base.addHook('onSend', (_request, reply, payload, done) => {
+    if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
+    done(null, payload);
   });
   registerErrorHandler(base);
   await registerSwagger(base);

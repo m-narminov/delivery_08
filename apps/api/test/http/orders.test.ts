@@ -184,12 +184,17 @@ describe('GET /api/orders — список', () => {
     expect(await listIds(`?status=delivered&restaurantId=${refs.sushi}`)).toEqual([ids.o4]);
   });
 
-  it('сортировка по сумме по возрастанию', async () => {
-    expect(await listIds('?sort=amount:asc')).toEqual([ids.o2, ids.o5, ids.o4, ids.o1, ids.o3]);
-  });
-
-  it('сортировка по времени изменения', async () => {
-    expect((await listIds('?sort=updatedAt:desc'))[0]).toBe(ids.o1);
+  // Все варианты сортировки целиком. Суммы: o2 < o5 < o4 < o1 < o3; создание: o1..o5 по часу;
+  // изменение: o2, o3, o4, o5 и последним o1 (через 10 часов).
+  it.each([
+    ['createdAt:desc', ['o5', 'o4', 'o3', 'o2', 'o1']],
+    ['createdAt:asc', ['o1', 'o2', 'o3', 'o4', 'o5']],
+    ['updatedAt:desc', ['o1', 'o5', 'o4', 'o3', 'o2']],
+    ['updatedAt:asc', ['o2', 'o3', 'o4', 'o5', 'o1']],
+    ['amount:desc', ['o3', 'o1', 'o4', 'o5', 'o2']],
+    ['amount:asc', ['o2', 'o5', 'o4', 'o1', 'o3']],
+  ] as const)('сортировка %s', async (sort, expected) => {
+    expect(await listIds(`?sort=${sort}`)).toEqual(expected.map((key) => ids[key]));
   });
 
   it('пагинация: вторая страница по 2', async () => {
@@ -236,6 +241,12 @@ describe('GET /api/orders — поиск по адресу', () => {
 
   it('поиск сочетается с фильтром', async () => {
     expect(await listIds(`?q=${encodeURIComponent('садовая')}&status=delivered`)).toEqual([ids.o4]);
+  });
+
+  it('символ NUL в поиске → 400, а не 500 от Postgres', async () => {
+    const response = await get('/api/orders?q=%00');
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('VALIDATION_FAILED');
   });
 
   it('ничего похожего — пустой список и total 0', async () => {

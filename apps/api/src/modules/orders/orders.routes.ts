@@ -12,6 +12,11 @@ import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { matchesIfNoneMatch, versionEtag } from '../../http/etag';
+import {
+  orderErrorResponses,
+  orderMutationErrorResponses,
+  protectedErrorResponses,
+} from '../../http/problem-responses';
 import { currentOperator } from '../../http/session';
 import {
   cancelOrder,
@@ -37,7 +42,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         summary: 'List orders with filters, search, sorting and pagination',
         security,
         querystring: orderListQuerySchema,
-        response: { 200: orderListSchema },
+        response: { 200: orderListSchema, ...protectedErrorResponses },
       },
     },
     (request) => listOrders(app.db, request.query),
@@ -52,7 +57,11 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         security,
         params: orderParamsSchema,
         // 304 — без тела: send(undefined) не вызывает сериализатор, схема нужна для типов и OpenAPI.
-        response: { 200: orderSchema, 304: z.undefined().describe('Not Modified') },
+        response: {
+          200: orderSchema,
+          304: z.undefined().describe('Not Modified'),
+          ...orderErrorResponses,
+        },
       },
     },
     async (request, reply) => {
@@ -77,7 +86,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         summary: 'Order audit log, oldest first',
         security,
         params: orderParamsSchema,
-        response: { 200: z.array(orderEventSchema) },
+        response: { 200: z.array(orderEventSchema), ...orderErrorResponses },
       },
     },
     (request) => getOrderEvents(app.db, request.params.id),
@@ -101,7 +110,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         params: orderParamsSchema,
         headers: ifMatchHeadersSchema,
         body: transitionBodySchema,
-        response: { 200: orderSchema },
+        response: { 200: orderSchema, ...orderMutationErrorResponses },
       },
     },
     async (request, reply) => {
@@ -121,7 +130,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         params: orderParamsSchema,
         headers: ifMatchHeadersSchema,
         body: courierBodySchema,
-        response: { 200: orderSchema },
+        response: { 200: orderSchema, ...orderMutationErrorResponses },
       },
     },
     async (request, reply) => {
@@ -141,7 +150,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         params: orderParamsSchema,
         headers: ifMatchHeadersSchema,
         body: cancelBodySchema,
-        response: { 200: orderSchema },
+        response: { 200: orderSchema, ...orderMutationErrorResponses },
       },
     },
     async (request, reply) => {
