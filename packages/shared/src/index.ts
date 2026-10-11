@@ -1,3 +1,4 @@
+export { DEV_OPERATOR_PASSWORD } from './dev-password';
 export { ORDER_STATUSES, type OrderStatus } from './order-status';
 export { ORDER_EVENT_ACTIONS, type OrderEventAction } from './order-events';
 export {

@@ -6,6 +6,7 @@ import {
   ResponseSerializationError,
 } from 'fastify-type-provider-zod';
 import { isDatabaseUnavailable } from '../db/errors';
+import { isWebAppRoute, sendWebApp } from './web-app';
 import { AppError } from '../errors';
 
 // Через сколько секунд клиенту стоит повторить запрос, если БД недоступна.
@@ -88,7 +89,12 @@ function toProblem(error: unknown, instance: string): Problem {
   return problem(500, 'INTERNAL_ERROR', 'Internal server error', instance);
 }
 
-export function registerErrorHandler(app: FastifyInstance): void {
+// webApp — API отдаёт и собранный фронт (production): адреса страниц фронта получают
+// index.html вместо 404.
+export function registerErrorHandler(
+  app: FastifyInstance,
+  options: { webApp?: boolean } = {},
+): void {
   app.setErrorHandler((error, request, reply) => {
     const body = toProblem(error, request.url);
     if (body.status >= 500) {
@@ -104,11 +110,18 @@ export function registerErrorHandler(app: FastifyInstance): void {
   });
 
   app.setNotFoundHandler((request, reply) =>
-    reply
-      .code(404)
-      .type(PROBLEM_CONTENT_TYPE)
-      .send(
-        problem(404, 'NOT_FOUND', `Route ${request.method} ${request.url} not found`, request.url),
-      ),
+    options.webApp && isWebAppRoute(request)
+      ? sendWebApp(reply)
+      : reply
+          .code(404)
+          .type(PROBLEM_CONTENT_TYPE)
+          .send(
+            problem(
+              404,
+              'NOT_FOUND',
+              `Route ${request.method} ${request.url} not found`,
+              request.url,
+            ),
+          ),
   );
 }

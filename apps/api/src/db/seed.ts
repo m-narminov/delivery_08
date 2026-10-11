@@ -7,8 +7,6 @@ import { generateSeedData } from './seed-data';
 // Произвольный ключ advisory lock: два одновременных запуска seed не засеют базу дважды.
 const SEED_LOCK_KEY = 70_011;
 
-export const DEFAULT_OPERATOR_PASSWORD = 'foodster-demo';
-
 function byIndex(ids: readonly number[], index: number): number {
   const id = ids[index];
   if (id === undefined) throw new Error(`Seed reference ${index} is out of range`);

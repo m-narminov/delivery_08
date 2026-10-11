@@ -1,7 +1,9 @@
+import { DEV_OPERATOR_PASSWORD } from '@foodster/shared';
 import {
   Alert,
   Button,
   Center,
+  Code,
   Loader,
   Paper,
   PasswordInput,
@@ -69,10 +71,17 @@ export function LoginPage() {
             <Title order={1} size="h3">
               Вход для операторов
             </Title>
-            <Text c="dimmed" size="sm">
-              Общий пароль демо-стенда задаётся при заполнении базы (SEED_OPERATOR_PASSWORD,
-              локально — foodster-demo).
-            </Text>
+            {/* Пароль показываем только при разработке: в production-сборке ветка вырезается
+                вместе со значением. На стенде пароль — секрет, его на странице нет. */}
+            {import.meta.env.DEV && (
+              <Text c="dimmed" size="sm">
+                Локальная разработка: пароль операторов по умолчанию —{' '}
+                {/* Целиком на одной строке и выделяется одним кликом: дефис иначе делит слово. */}
+                <Code style={{ whiteSpace: 'nowrap', userSelect: 'all' }}>
+                  {DEV_OPERATOR_PASSWORD}
+                </Code>
+              </Text>
+            )}
 
             {operators.isPending && (
               <Center py="md" role="status">

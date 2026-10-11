@@ -25,6 +25,7 @@
     "dev": "concurrently --names api,web --prefix-colors blue,magenta --kill-others-on-fail \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev -w @foodster/api",
     "dev:web": "npm run dev -w @foodster/web",
+    "build": "npm run build -w @foodster/web && npm run build -w @foodster/api",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",

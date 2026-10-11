@@ -34,9 +34,10 @@ export type TestApp = Awaited<ReturnType<typeof buildApp>>;
 
 // Приложение на отдельной тестовой БД. close() закрывает приложение и удаляет БД.
 // По умолчанию без Valkey (события внутри процесса, без кэша), как при пустом REDIS_URL.
-export async function createTestApp() {
+// webRoot — папка собранного фронта (тест раздачи фронта из API).
+export async function createTestApp(options: { webRoot?: string } = {}) {
   const testDb = await createTestDatabase();
-  const app = await buildApp({ config: testConfig(), db: testDb.db });
+  const app = await buildApp({ config: testConfig(), db: testDb.db, webRoot: options.webRoot });
   return {
     app,
     db: testDb.db,

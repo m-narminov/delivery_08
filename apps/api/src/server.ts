@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Redis } from 'ioredis';
 import { buildApp } from './app';
 import { createValkeyCache, noCache, type Cache } from './cache/cache';
@@ -11,10 +14,25 @@ import {
 } from './realtime/order-event-bus';
 import { createValkeyClient } from './valkey/client';
 
+function resolveWebRoot(): string {
+  const root = fileURLToPath(new URL('../../web/dist/', import.meta.url));
+  // Без сборки фронта сервис отвечал бы 404 на главной — лучше упасть при старте с понятной
+  // причиной (обычно забыли npm run build).
+  if (!existsSync(join(root, 'index.html'))) {
+    throw new Error(`Web build not found at ${root}: run npm run build`);
+  }
+  return root;
+}
+
 // Если текущие запросы не завершатся за это время, выходим принудительно.
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 const config = loadConfig();
+// Собранный фронт (npm run build) — в production его отдаёт само API. Путь одинаков от
+// src/server.ts и от собранного dist/server.js: apps/api/<папка>/ → apps/web/dist.
+// Проверяем до подключения к БД и Valkey: без сборки падаем сразу.
+const webRoot = config.NODE_ENV === 'production' ? resolveWebRoot() : undefined;
+
 const { db, pool } = createDatabase(config.DATABASE_URL);
 
 // Valkey необязателен. С ним события об изменениях доходят до всех инстансов и работает кэш
@@ -34,7 +52,7 @@ if (config.REDIS_URL) {
   cache = noCache;
 }
 
-const app = await buildApp({ config, db, orderEvents, cache });
+const app = await buildApp({ config, db, orderEvents, cache, webRoot });
 
 async function closeResources(): Promise<void> {
   // disconnect, а не quit: ждать ответа от недоступного Valkey при остановке незачем.
@@ -45,7 +63,13 @@ async function closeResources(): Promise<void> {
 // Graceful shutdown: перестаём принимать новые запросы, закрываем SSE-потоки, дожидаемся
 // текущих запросов, затем закрываем соединения с Valkey и пул БД.
 // Render при деплое и остановке присылает SIGTERM; Ctrl+C в терминале — SIGINT.
+// Сигнал может прийти дважды: если платформа шлёт его всей группе процессов, node получает
+// и свой, и пересланный от npm. Повторный игнорируем — иначе процесс умер бы сразу,
+// не закрыв соединения (поведение Node по умолчанию, когда обработчика нет).
+let shuttingDown = false;
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
   app.log.info({ signal }, 'Shutting down');
   const forceExit = setTimeout(() => {
     app.log.error({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'Shutdown timed out, forcing exit');
@@ -61,8 +85,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     process.exitCode = 1;
   }
 }
-process.once('SIGTERM', (signal) => void shutdown(signal));
-process.once('SIGINT', (signal) => void shutdown(signal));
+process.on('SIGTERM', (signal) => void shutdown(signal));
+process.on('SIGINT', (signal) => void shutdown(signal));
 
 try {
   await app.listen({ host: config.HOST, port: config.PORT });

@@ -13,6 +13,7 @@ import { registerErrorHandler } from './http/error-handler';
 import { protectedRoutes } from './http/protected-routes';
 import { registerSession } from './http/session';
 import { registerSwagger } from './http/swagger';
+import { registerWebApp } from './http/web-app';
 import { logger } from './logger';
 import { authRoutes } from './modules/auth/auth.routes';
 import { healthRoutes } from './modules/health/health.routes';
@@ -39,6 +40,8 @@ export interface AppDependencies {
   // Без Valkey (по умолчанию): события внутри процесса, кэша нет.
   orderEvents?: OrderEventBus;
   cache?: Cache;
+  // Папка собранного фронта: если задана, API отдаёт и его (production).
+  webRoot?: string;
 }
 
 // Сборка приложения без запуска сервера: тесты вызывают buildApp и шлют запросы
@@ -49,6 +52,7 @@ export async function buildApp({
   logger: appLogger = logger,
   orderEvents = createLocalOrderEventBus(appLogger),
   cache = noCache,
+  webRoot,
 }: AppDependencies) {
   const base = Fastify({
     loggerInstance: appLogger,
@@ -87,7 +91,8 @@ export async function buildApp({
     if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
     done(null, payload);
   });
-  registerErrorHandler(base);
+  registerErrorHandler(base, { webApp: webRoot !== undefined });
+  if (webRoot !== undefined) await registerWebApp(base, webRoot);
   await registerSwagger(base);
   await registerSession(base, config);
 
