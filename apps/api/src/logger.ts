@@ -68,6 +68,17 @@ function levelFromEnv(): string {
   return result.data;
 }
 
+// pino-pretty — dev-зависимость. Если development включили там, где её нет (production-сборка
+// с ошибкой в NODE_ENV), лучше писать JSON, чем упасть при импорте логгера.
+function isInstalled(specifier: string): boolean {
+  try {
+    import.meta.resolve(specifier);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createLogger(
   options: { level?: string; destination?: DestinationStream } = {},
 ): Logger {
@@ -80,18 +91,23 @@ export function createLogger(
   };
   if (options.destination) return pino(config, options.destination);
 
-  // В production — JSON в stdout (его собирает Render). Локально в терминале — читаемый
-  // цветной вывод через pino-pretty, он работает в отдельном потоке и не тормозит приложение.
-  // Без NODE_ENV — JSON: config.ts всё равно не даст приложению запуститься.
-  const environment = process.env.NODE_ENV;
-  const pretty = environment !== undefined && environment !== 'production' && process.stdout.isTTY;
+  // В production и тестах — JSON в stdout (production-логи собирает Render). В разработке —
+  // читаемый цветной вывод через pino-pretty (работает в отдельном потоке и не тормозит
+  // приложение). Не по isTTY: под `npm run dev` вывод идёт через concurrently, это канал,
+  // а не терминал. Цвета при этом сохраняются: concurrently передаёт FORCE_COLOR,
+  // если терминал их поддерживает.
+  const pretty = process.env.NODE_ENV === 'development' && isInstalled('pino-pretty');
   return pino(
     pretty
       ? {
           ...config,
           transport: {
             target: 'pino-pretty',
-            options: { translateTime: 'SYS:HH:MM:ss', ignore: 'pid,hostname' },
+            options: {
+              translateTime: 'SYS:HH:MM:ss',
+              ignore: 'pid,hostname,name',
+              singleLine: true,
+            },
           },
         }
       : config,

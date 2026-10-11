@@ -1,10 +1,11 @@
-import { AppShell, Button, Group, Text } from '@mantine/core';
+import { Anchor, AppShell, Button, Group, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, Outlet, useNavigate } from '@tanstack/react-router';
 import { errorMessage } from '../api/errors';
 import { logout } from '../api/session';
 import { endSession } from '../auth';
+import { Logo } from '../components/Logo';
 
 const route = getRouteApi('/app');
 
@@ -26,10 +27,17 @@ export function AppLayout() {
     <AppShell header={{ height: 56 }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          {/* Не заголовок: главный заголовок h1 — у страницы, шапка его не опережает. */}
-          <Text component={Link} to="/orders" fw={700} size="lg" c="inherit" td="none">
-            Foodster Ops
-          </Text>
+          {/* Логотип — ссылка на список; не заголовок: главный h1 — у страницы. Anchor, а не
+              голый <a>: без подчёркивания и с фирменным кольцом фокуса, как у остальных.
+              Имя ссылки начинается с видимого текста логотипа (WCAG 2.5.3). */}
+          <Anchor
+            component={Link}
+            to="/orders"
+            underline="never"
+            aria-label="Foodster, сервис доставки — к списку заказов"
+          >
+            <Logo />
+          </Anchor>
           <Group gap="sm" wrap="nowrap">
             <Text size="sm" visibleFrom="xs" truncate>
               {session.operator.name}

@@ -1,6 +1,9 @@
+import '@fontsource-variable/onest';
+// Inter нужен только надписи логотипа, а она курсивом — подключаем лишь курсивное начертание.
+import '@fontsource-variable/inter/wght-italic.css';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
-import { createTheme, MantineProvider } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
@@ -11,8 +14,7 @@ import { isUnauthorized } from './api/errors';
 import { LOGIN_MUTATION_KEY } from './api/session';
 import { endSession } from './auth';
 import { createAppRouter } from './router';
-
-const theme = createTheme({ primaryColor: 'orange' });
+import { cssVariablesResolver, theme } from './theme';
 
 // Сессия истекла посреди работы: запрос или изменение получили 401 — на вход, а после входа
 // обратно на ту же страницу. Несколько одновременных 401 дают один переход.
@@ -53,7 +55,11 @@ if (!container) throw new Error('#root element is missing in index.html');
 
 createRoot(container).render(
   <StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="auto">
+    <MantineProvider
+      theme={theme}
+      cssVariablesResolver={cssVariablesResolver}
+      defaultColorScheme="auto"
+    >
       <Notifications position="top-right" />
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />

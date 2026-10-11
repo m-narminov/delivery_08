@@ -16,6 +16,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
 import { errorMessage } from '../api/errors';
 import { login, LOGIN_MUTATION_KEY, operatorsQuery, sessionQuery } from '../api/session';
+import { Logo } from '../components/Logo';
 
 const route = getRouteApi('/login');
 
@@ -48,79 +49,87 @@ export function LoginPage() {
 
   return (
     <Center mih="100vh" p="md">
-      <Paper
-        component="form"
-        onSubmit={submit}
-        noValidate
-        withBorder
-        shadow="sm"
-        p="xl"
-        radius="md"
-        w="100%"
-        maw={420}
-      >
-        <Stack>
-          <Title order={1} size="h2">
-            Foodster Ops
-          </Title>
-          <Text c="dimmed" size="sm">
-            Вход для операторов. Общий пароль демо-стенда задаётся при заполнении базы
-            (SEED_OPERATOR_PASSWORD, локально — foodster-demo).
-          </Text>
+      <Stack align="center" gap="sm" w="100%">
+        <Paper
+          component="form"
+          onSubmit={submit}
+          noValidate
+          withBorder
+          shadow="sm"
+          p="xl"
+          radius="md"
+          w="100%"
+          maw={420}
+        >
+          <Stack>
+            <Logo />
+            <Title order={1} size="h3">
+              Вход для операторов
+            </Title>
+            <Text c="dimmed" size="sm">
+              Общий пароль демо-стенда задаётся при заполнении базы (SEED_OPERATOR_PASSWORD,
+              локально — foodster-demo).
+            </Text>
 
-          {operators.isPending && (
-            <Center py="md" role="status">
-              <Loader size="sm" aria-hidden />
-              <VisuallyHidden>Загрузка списка операторов…</VisuallyHidden>
-            </Center>
-          )}
-          {operators.isError && (
-            <Alert color="red" title="Не удалось загрузить операторов">
-              {errorMessage(operators.error)}
-              <Button variant="subtle" size="xs" mt="xs" onClick={() => void operators.refetch()}>
-                Повторить
-              </Button>
-            </Alert>
-          )}
-          {operators.isSuccess && operators.data.length === 0 && (
-            <Alert color="yellow">Операторов нет. Заполните базу: npm run db:seed</Alert>
-          )}
-          {operators.isSuccess && operators.data.length > 0 && (
-            <>
-              <Select
-                label="Оператор"
-                placeholder="Выберите себя"
-                data={operators.data.map((operator) => ({
-                  value: String(operator.id),
-                  label: operator.name,
-                }))}
-                value={operatorId}
-                onChange={setOperatorId}
-                searchable
-                required
-                nothingFoundMessage="Никого не нашли"
-                error={submitted && operatorId === null ? 'Выберите оператора' : undefined}
-              />
-              <PasswordInput
-                label="Пароль"
-                value={password}
-                onChange={(event) => setPassword(event.currentTarget.value)}
-                autoComplete="current-password"
-                required
-                error={submitted && password === '' ? 'Введите пароль' : undefined}
-              />
-              {signIn.isError && (
-                <Alert color="red" role="alert">
-                  {errorMessage(signIn.error)}
-                </Alert>
-              )}
-              <Button type="submit" loading={signIn.isPending}>
-                Войти
-              </Button>
-            </>
-          )}
-        </Stack>
-      </Paper>
+            {operators.isPending && (
+              <Center py="md" role="status">
+                <Loader size="sm" aria-hidden />
+                <VisuallyHidden>Загрузка списка операторов…</VisuallyHidden>
+              </Center>
+            )}
+            {operators.isError && (
+              <Alert color="red" title="Не удалось загрузить операторов">
+                {errorMessage(operators.error)}
+                <Button variant="subtle" size="xs" mt="xs" onClick={() => void operators.refetch()}>
+                  Повторить
+                </Button>
+              </Alert>
+            )}
+            {operators.isSuccess && operators.data.length === 0 && (
+              <Alert color="yellow">Операторов нет. Заполните базу: npm run db:seed</Alert>
+            )}
+            {operators.isSuccess && operators.data.length > 0 && (
+              <>
+                <Select
+                  label="Оператор"
+                  placeholder="Выберите себя"
+                  data={operators.data.map((operator) => ({
+                    value: String(operator.id),
+                    label: operator.name,
+                  }))}
+                  value={operatorId}
+                  onChange={setOperatorId}
+                  searchable
+                  required
+                  nothingFoundMessage="Никого не нашли"
+                  error={submitted && operatorId === null ? 'Выберите оператора' : undefined}
+                />
+                <PasswordInput
+                  label="Пароль"
+                  value={password}
+                  onChange={(event) => setPassword(event.currentTarget.value)}
+                  autoComplete="current-password"
+                  required
+                  error={submitted && password === '' ? 'Введите пароль' : undefined}
+                />
+                {signIn.isError && (
+                  <Alert color="red" role="alert">
+                    {errorMessage(signIn.error)}
+                  </Alert>
+                )}
+                <Button type="submit" loading={signIn.isPending}>
+                  Войти
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Paper>
+        {/* Стенд публичный: оговорка, чтобы его не приняли за настоящий сервис компании. */}
+        <Text c="dimmed" size="xs" ta="center" maw={420}>
+          Тестовое задание для Foodster. Не является официальным сервисом компании. Название и
+          логотип принадлежат правообладателю.
+        </Text>
+      </Stack>
     </Center>
   );
 }
