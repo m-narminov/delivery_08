@@ -1,4 +1,11 @@
-import { orderEventSchema, orderListSchema, orderSchema, restaurantSchema } from '@foodster/shared';
+import {
+  courierSchema,
+  orderEventSchema,
+  orderListSchema,
+  orderSchema,
+  restaurantSchema,
+  type OrderStatus,
+} from '@foodster/shared';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
 import { toApiQuery, type OrdersSearch } from '../orders/search';
@@ -7,9 +14,14 @@ import { apiRequest } from './client';
 // Ключи запросов заказов: по префиксу ['orders'] их можно разом пометить устаревшими (SSE, 8d).
 export const ordersKeys = {
   all: ['orders'] as const,
+  lists: ['orders', 'list'] as const,
   list: (search: OrdersSearch) => ['orders', 'list', search] as const,
   detail: (id: number) => ['orders', 'detail', id] as const,
   events: (id: number) => ['orders', 'events', id] as const,
+  // Курьеры — под тем же префиксом: число их активных доставок меняется вместе с заказами.
+  // После своего изменения карточка обновляет их явно, а общая инвалидация ['orders'] по
+  // событию SSE (этап 8d) обновит их вместе со всем остальным.
+  couriers: ['orders', 'couriers'] as const,
 };
 
 export function ordersListQuery(search: OrdersSearch) {
@@ -46,4 +58,43 @@ export function orderEventsQuery(id: number) {
     queryFn: async ({ signal }) =>
       (await apiRequest(`/api/orders/${id}/events`, z.array(orderEventSchema), { signal })).data,
   });
+}
+
+// Курьеры с числом активных доставок — для выбора курьера в карточке.
+export const couriersQuery = queryOptions({
+  queryKey: ordersKeys.couriers,
+  queryFn: async ({ signal }) =>
+    (await apiRequest('/api/couriers', z.array(courierSchema), { signal })).data,
+});
+
+// Действие оператора над заказом. Одно описание на запрос, проверку допустимости и повтор
+// после конфликта версий.
+export type OrderAction =
+  | { kind: 'transition'; to: Exclude<OrderStatus, 'cancelled'> }
+  | { kind: 'courier'; courierId: number | null }
+  | { kind: 'cancel'; reason: string | null };
+
+// Изменение заказа: версия, которую видел оператор, уходит в If-Match. Устарела — API ответит 412.
+export function runOrderAction(orderId: number, action: OrderAction, etag: string) {
+  const options = { ifMatch: etag };
+  switch (action.kind) {
+    case 'transition':
+      return apiRequest(`/api/orders/${orderId}/transitions`, orderSchema, {
+        ...options,
+        method: 'POST',
+        body: { to: action.to },
+      });
+    case 'courier':
+      return apiRequest(`/api/orders/${orderId}/courier`, orderSchema, {
+        ...options,
+        method: 'PUT',
+        body: { courierId: action.courierId },
+      });
+    case 'cancel':
+      return apiRequest(`/api/orders/${orderId}/cancel`, orderSchema, {
+        ...options,
+        method: 'POST',
+        body: { reason: action.reason ?? undefined },
+      });
+  }
 }

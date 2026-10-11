@@ -62,7 +62,9 @@ createRoot(container).render(
       cssVariablesResolver={cssVariablesResolver}
       defaultColorScheme="auto"
     >
-      <Notifications position="top-right" />
+      {/* Снизу справа: сверху уведомления на несколько секунд закрывали шапку — имя оператора
+          и кнопку «Выйти» (на телефоне — и логотип). */}
+      <Notifications position="bottom-right" />
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>

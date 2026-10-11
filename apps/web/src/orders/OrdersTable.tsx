@@ -1,6 +1,15 @@
 import type { Order } from '@foodster/shared';
 import { useMergedRef } from '@mantine/hooks';
-import { memo, useEffect, useRef, useState, type Ref, type RefObject } from 'react';
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type Ref,
+  type RefObject,
+} from 'react';
+import { useRouter } from '@tanstack/react-router';
 import { Box, Skeleton, Table, Text, VisuallyHidden } from '@mantine/core';
 import { AnchorLink } from '../components/AnchorLink';
 import { Copyable } from '../components/Copyable';
@@ -136,6 +145,23 @@ export const OrdersTable = memo(function OrdersTable({
   refreshing,
   viewportRef,
 }: OrdersTableProps) {
+  const router = useRouter();
+  // Клик по строке открывает заказ — удобнее, чем целиться в номер. Это добавка для мыши:
+  // с клавиатуры и для экранного диктора переход — ссылка на номере. Не открываем, если кликнули
+  // по ссылке или кнопке (копирование) или выделили текст протягиванием (двойной клик по слову
+  // заказ откроет — для копирования есть кнопки). Ctrl/⌘/Shift и средняя кнопка — в новой
+  // вкладке, как у обычной ссылки; адрес строится так же, как у Link (с учётом basepath).
+  const openOrder = (event: MouseEvent<HTMLTableRowElement>, orderId: number) => {
+    if (event.target instanceof Element && event.target.closest('a, button, input')) return;
+    if (window.getSelection()?.toString()) return;
+    const location = { to: '/orders/$orderId', params: { orderId } } as const;
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1) {
+      const href = router.history.createHref(router.buildLocation(location).publicHref);
+      window.open(href, '_blank', 'noopener');
+      return;
+    }
+    void router.navigate(location);
+  };
   const ownViewportRef = useRef<HTMLDivElement>(null);
   const mergedViewportRef = useMergedRef(ownViewportRef, viewportRef);
   // Есть ли что прокручивать по горизонтали (узкий экран или широкое содержимое). Пока не
@@ -223,19 +249,29 @@ export const OrdersTable = memo(function OrdersTable({
                   </Table.Tr>
                 ))
               : orders.map((order) => (
-                  <Table.Tr key={order.id}>
+                  <Table.Tr
+                    key={order.id}
+                    onClick={(event) => openOrder(event, order.id)}
+                    // Средняя кнопка мыши даёт auxclick, а не click.
+                    onAuxClick={(event) => {
+                      if (event.button === 1) openOrder(event, order.id);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <Table.Td>
                       <Copyable
                         value={String(order.id)}
                         label={`Скопировать номер заказа ${order.id}`}
                       >
-                        {/* Номер — ссылка на карточку: открывается и в новой вкладке. Подпись
-                            «Заказ 196» для диктора: одно число среди ссылок непонятно. */}
+                        {/* Номер — ссылка на карточку: открывается и в новой вкладке. Подчёркнута
+                            всегда, чтобы было видно, что это ссылка. Подпись «Заказ 196» для
+                            диктора: одно число среди ссылок непонятно. */}
                         <AnchorLink
                           to="/orders/$orderId"
                           params={{ orderId: order.id }}
                           fw={600}
                           size="sm"
+                          underline="always"
                           aria-label={`Заказ ${order.id}`}
                         >
                           {order.id}

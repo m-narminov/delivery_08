@@ -27,6 +27,8 @@ import { Copyable } from '../components/Copyable';
 import { ORDER_PAGE_MAX_WIDTH } from '../layouts/sizes';
 import { formatDateTime, formatMoney, formatPhone, phoneE164 } from '../format';
 import { describeEvent, eventActorName } from '../orders/events';
+import { OrderActions } from '../orders/OrderActions';
+import { useOrderActions } from '../orders/useOrderActions';
 import { StatusBadge } from '../orders/StatusBadge';
 
 const route = getRouteApi('/app/orders/$orderId');
@@ -175,6 +177,7 @@ export function OrderPage() {
   const order = useQuery(orderQuery(orderId));
   const events = useQuery(orderEventsQuery(orderId));
   const detailsTitleId = useId();
+  const actions = useOrderActions(orderId);
   // Номер заказа в заголовке вкладки: видно в списке вкладок и истории браузера (WCAG 2.4.2).
   // Хук только записывает заголовок и не возвращает прежний — поэтому его задаёт каждая
   // страница приложения сама.
@@ -205,6 +208,12 @@ export function OrderPage() {
         </Title>
         {order.data && <StatusBadge status={order.data.data.status} />}
       </Group>
+
+      {order.data && (
+        <Paper withBorder radius="md" p="md">
+          <OrderActions order={order.data.data} etag={order.data.etag} actions={actions} />
+        </Paper>
+      )}
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         {/* alignSelf: start — карточка по своей высоте, а не до высоты истории рядом. */}

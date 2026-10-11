@@ -107,7 +107,9 @@ export function OrdersPage() {
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <Stack gap="md">
+    // Запас снизу под уведомление в одну-две строки: уведомления — снизу справа, и у конца
+    // прокрутки они иначе на несколько секунд закрывали бы пагинацию и «На странице».
+    <Stack gap="md" pb={80}>
       <Title order={1} size="h2">
         Заказы
       </Title>

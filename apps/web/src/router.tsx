@@ -101,6 +101,9 @@ const orderRoute = createRoute({
     if (!Number.isSafeInteger(params.orderId) || params.orderId < 1) notFound({ throw: true });
   },
   component: lazyRouteComponent(() => import('./pages/OrderPage'), 'OrderPage'),
+  // Другой номер заказа — новый экземпляр страницы. Иначе роутер переиспользует компонент, и
+  // состояние (модалка конфликта, ошибка, идущее изменение) перешло бы на другой заказ.
+  remountDeps: ({ params }) => params.orderId,
   // Своё «не найдено» именно у этого маршрута: роутер ставит его на место компонента того
   // маршрута, где нашёл notFoundComponent. Здесь заменится только карточка — шапка с выходом
   // останется. У /app оно заменило бы весь макет вместе с шапкой.
