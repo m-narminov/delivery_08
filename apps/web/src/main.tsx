@@ -24,8 +24,10 @@ function onUnauthorized(error: unknown): void {
   if (router.state.location.pathname === '/login') return;
   endingSession = true;
   const redirect = router.state.location.href;
+  // replace: вход вернёт на эту же страницу, заменив запись входа. Без replace в истории
+  // осталась бы лишняя копия страницы, и «Назад» с неё вёл бы на неё же.
   void endSession(queryClient, () =>
-    router.navigate({ to: '/login', search: { redirect } }),
+    router.navigate({ to: '/login', search: { redirect }, replace: true }),
   ).finally(() => {
     endingSession = false;
   });

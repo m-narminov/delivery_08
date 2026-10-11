@@ -10,6 +10,7 @@ import {
   Text,
   Title,
 } from '@mantine/core';
+import { useDocumentTitle } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, useLocation, useRouter } from '@tanstack/react-router';
 import { useRef } from 'react';
@@ -41,6 +42,8 @@ export function OrdersPage() {
   const orders = useQuery(ordersListQuery(search));
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Заголовок вкладки: после карточки («Заказ № N») вернуть название списка.
+  useDocumentTitle('Заказы — Foodster Ops');
   const tableRef = useRef<HTMLDivElement>(null);
 
   // Поиск и ключ записи — из ожидающего адреса (router.stores.location выставляется в начале

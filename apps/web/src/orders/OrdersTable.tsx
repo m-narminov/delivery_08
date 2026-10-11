@@ -2,6 +2,7 @@ import type { Order } from '@foodster/shared';
 import { useMergedRef } from '@mantine/hooks';
 import { memo, useEffect, useRef, useState, type Ref, type RefObject } from 'react';
 import { Box, Skeleton, Table, Text, VisuallyHidden } from '@mantine/core';
+import { AnchorLink } from '../components/AnchorLink';
 import { Copyable } from '../components/Copyable';
 import { formatDate, formatMoney, formatPhone, formatTime, phoneE164 } from '../format';
 import { StatusBadge } from './StatusBadge';
@@ -228,9 +229,17 @@ export const OrdersTable = memo(function OrdersTable({
                         value={String(order.id)}
                         label={`Скопировать номер заказа ${order.id}`}
                       >
-                        <Text fw={600} size="sm">
+                        {/* Номер — ссылка на карточку: открывается и в новой вкладке. Подпись
+                            «Заказ 196» для диктора: одно число среди ссылок непонятно. */}
+                        <AnchorLink
+                          to="/orders/$orderId"
+                          params={{ orderId: order.id }}
+                          fw={600}
+                          size="sm"
+                          aria-label={`Заказ ${order.id}`}
+                        >
                           {order.id}
-                        </Text>
+                        </AnchorLink>
                       </Copyable>
                     </Table.Td>
                     <Table.Td>

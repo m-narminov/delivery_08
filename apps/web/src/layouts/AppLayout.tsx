@@ -28,7 +28,7 @@ export function AppLayout() {
   return (
     // На широком экране (от lg, 1200 px) поля слева и справа шире; у шапки те же, чтобы логотип
     // стоял вровень с содержимым.
-    <AppShell header={{ height: 56 }} padding={PAGE_PADDING}>
+    <AppShell header={{ height: 60 }} padding={PAGE_PADDING}>
       <AppShell.Header>
         <Group h="100%" px={PAGE_PADDING} justify="space-between" wrap="nowrap">
           {/* Логотип — ссылка на список; не заголовок: главный h1 — у страницы. Anchor, а не

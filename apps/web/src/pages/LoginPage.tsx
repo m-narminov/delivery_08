@@ -11,6 +11,7 @@ import {
   Title,
   VisuallyHidden,
 } from '@mantine/core';
+import { useDocumentTitle } from '@mantine/hooks';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
@@ -25,6 +26,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const operators = useQuery(operatorsQuery);
+  // Заголовок вкладки задаёт каждая страница: после выхода иначе остался бы «Заказ № N».
+  useDocumentTitle('Вход — Foodster Ops');
   const [operatorId, setOperatorId] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   // Ошибки полей показываем после первой попытки отправки, а не сразу.

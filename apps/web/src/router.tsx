@@ -4,6 +4,7 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  notFound,
   Outlet,
   redirect,
   stripSearchParams,
@@ -11,7 +12,7 @@ import {
 import { z } from 'zod';
 import { sessionQuery } from './api/session';
 import { DEFAULT_ORDERS_SEARCH, ordersSearchSchema } from './orders/search';
-import { NotFoundPage } from './pages/NotFoundPage';
+import { NotFoundInApp, NotFoundPage } from './pages/NotFoundPage';
 import { RouteError, RoutePending } from './pages/RouteStates';
 
 export interface RouterContext {
@@ -87,9 +88,28 @@ const ordersRoute = createRoute({
   component: lazyRouteComponent(() => import('./pages/OrdersPage'), 'OrdersPage'),
 });
 
+// Номер заказа в адресе — строка. Только цифры без ведущего нуля, иначе «страница не найдена»:
+// Number('1e3') и Number(' 7') дали бы число, хотя такого адреса у заказа нет.
+const orderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/orders/$orderId',
+  params: {
+    parse: ({ orderId }) => ({ orderId: /^[1-9]\d{0,15}$/.test(orderId) ? Number(orderId) : 0 }),
+    stringify: ({ orderId }) => ({ orderId: String(orderId) }),
+  },
+  beforeLoad: ({ params }) => {
+    if (!Number.isSafeInteger(params.orderId) || params.orderId < 1) notFound({ throw: true });
+  },
+  component: lazyRouteComponent(() => import('./pages/OrderPage'), 'OrderPage'),
+  // Своё «не найдено» именно у этого маршрута: роутер ставит его на место компонента того
+  // маршрута, где нашёл notFoundComponent. Здесь заменится только карточка — шапка с выходом
+  // останется. У /app оно заменило бы весь макет вместе с шапкой.
+  notFoundComponent: NotFoundInApp,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, ordersRoute]),
+  appRoute.addChildren([indexRoute, ordersRoute, orderRoute]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
