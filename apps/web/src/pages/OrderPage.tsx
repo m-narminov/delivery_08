@@ -18,10 +18,11 @@ import {
 import { useDocumentTitle } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, useCanGoBack, useRouter } from '@tanstack/react-router';
-import { useId, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { ApiError } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { orderEventsQuery, orderQuery } from '../api/orders';
+import { subscribeToOrderChanges } from '../api/stream';
 import { AnchorLink } from '../components/AnchorLink';
 import { Copyable } from '../components/Copyable';
 import { ORDER_PAGE_MAX_WIDTH } from '../layouts/sizes';
@@ -32,6 +33,36 @@ import { useOrderActions } from '../orders/useOrderActions';
 import { StatusBadge } from '../orders/StatusBadge';
 
 const route = getRouteApi('/app/orders/$orderId');
+const appRoute = getRouteApi('/app');
+
+// Сколько после чужого изменения кнопки действий недоступны: надпись кнопки могла смениться
+// прямо под курсором («Готовится» → «Готов к выдаче»), и клик ушёл бы не туда.
+const LOCK_AFTER_REMOTE_CHANGE_MS = 1_000;
+
+// Последнее изменение этого заказа, пришедшее по SSE от другого оператора (по id автора).
+// Изменения под своим именем не показываем — включая сделанные в другой вкладке: обычно это
+// то же действие, о котором здесь или там уже сказало уведомление «Статус изменён» и т. п.
+// Изменение без автора (клиентское приложение) показываем.
+function useRemoteChange(orderId: number) {
+  const { session } = appRoute.useRouteContext();
+  const [event, setEvent] = useState<OrderEvent | null>(null);
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    let unlockTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = subscribeToOrderChanges((change) => {
+      if (change.orderId !== orderId || change.event.actor?.id === session.operator.id) return;
+      setEvent(change.event);
+      setLocked(true);
+      clearTimeout(unlockTimer);
+      unlockTimer = setTimeout(() => setLocked(false), LOCK_AFTER_REMOTE_CHANGE_MS);
+    });
+    return () => {
+      unsubscribe();
+      clearTimeout(unlockTimer);
+    };
+  }, [orderId, session.operator.id]);
+  return { event, locked, dismiss: () => setEvent(null) };
+}
 
 function isNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
@@ -178,6 +209,8 @@ export function OrderPage() {
   const events = useQuery(orderEventsQuery(orderId));
   const detailsTitleId = useId();
   const actions = useOrderActions(orderId);
+  const remoteChange = useRemoteChange(orderId);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   // Номер заказа в заголовке вкладки: видно в списке вкладок и истории браузера (WCAG 2.4.2).
   // Хук только записывает заголовок и не возвращает прежний — поэтому его задаёт каждая
   // страница приложения сама.
@@ -203,7 +236,7 @@ export function OrderPage() {
     <Stack gap="md" maw={ORDER_PAGE_MAX_WIDTH} mx="auto">
       <BackToList />
       <Group gap="sm" align="center">
-        <Title order={1} size="h2">
+        <Title order={1} size="h2" ref={titleRef} tabIndex={-1} className="mantine-focus-auto">
           Заказ № {orderId}
         </Title>
         {order.data && <StatusBadge status={order.data.data.status} />}
@@ -211,9 +244,39 @@ export function OrderPage() {
 
       {order.data && (
         <Paper withBorder radius="md" p="md">
-          <OrderActions order={order.data.data} etag={order.data.etag} actions={actions} />
+          <OrderActions
+            order={order.data.data}
+            etag={order.data.etag}
+            actions={actions}
+            // Сразу после чужого изменения кнопки на секунду недоступны (см. useRemoteChange).
+            locked={remoteChange.locked}
+          />
         </Paper>
       )}
+
+      {/* Изменение другого оператора пришло по SSE: данные перезапрашиваются, а здесь сказано,
+          кто и что сделал, — чтобы обновление не прошло незамеченным. Ниже панели действий:
+          появляясь, плашка не сдвигает кнопки под курсором. Область объявлений (role="status")
+          смонтирована всегда — диктор надёжно озвучит появившийся текст. */}
+      <div role="status">
+        {remoteChange.event && (
+          <Alert
+            color="blue"
+            title="Заказ только что изменили"
+            withCloseButton
+            closeButtonLabel="Скрыть"
+            onClose={() => {
+              remoteChange.dismiss();
+              // Кнопка «Скрыть» исчезает вместе с плашкой — фокус на заголовок заказа.
+              titleRef.current?.focus();
+            }}
+            role="none"
+          >
+            {eventActorName(remoteChange.event)} в {formatDateTime(remoteChange.event.createdAt)}:{' '}
+            <b>{describeEvent(remoteChange.event)}</b>
+          </Alert>
+        )}
+      </div>
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         {/* alignSelf: start — карточка по своей высоте, а не до высоты истории рядом. */}

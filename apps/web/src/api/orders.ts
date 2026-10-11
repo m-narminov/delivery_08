@@ -4,12 +4,13 @@ import {
   orderListSchema,
   orderSchema,
   restaurantSchema,
+  type Order,
   type OrderStatus,
 } from '@foodster/shared';
-import { keepPreviousData, queryOptions } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, replaceEqualDeep } from '@tanstack/react-query';
 import { z } from 'zod';
 import { toApiQuery, type OrdersSearch } from '../orders/search';
-import { apiRequest } from './client';
+import { apiRequest, type ApiResponse } from './client';
 
 // Ключи запросов заказов: по префиксу ['orders'] их можно разом пометить устаревшими (SSE, 8d).
 export const ordersKeys = {
@@ -19,8 +20,8 @@ export const ordersKeys = {
   detail: (id: number) => ['orders', 'detail', id] as const,
   events: (id: number) => ['orders', 'events', id] as const,
   // Курьеры — под тем же префиксом: число их активных доставок меняется вместе с заказами.
-  // После своего изменения карточка обновляет их явно, а общая инвалидация ['orders'] по
-  // событию SSE (этап 8d) обновит их вместе со всем остальным.
+  // После своего изменения и по событию SSE их обновляют явно, а при (пере)подключении потока
+  // общая инвалидация ['orders'] обновит их вместе со всем остальным.
   couriers: ['orders', 'couriers'] as const,
 };
 
@@ -48,6 +49,15 @@ export function orderQuery(id: number) {
   return queryOptions({
     queryKey: ordersKeys.detail(id),
     queryFn: ({ signal }) => apiRequest(`/api/orders/${id}`, orderSchema, { signal }),
+    // Ответы могут прийти не по порядку (перезапросы по событиям SSE, после своего изменения):
+    // более старая версия заказа не затирает уже показанную новую. Иначе — как обычно,
+    // с сохранением неизменившихся частей (structural sharing).
+    structuralSharing: (previous, next) => {
+      const old = previous as ApiResponse<Order> | undefined;
+      const fresh = next as ApiResponse<Order>;
+      if (old && old.data.version > fresh.data.version) return old;
+      return replaceEqualDeep(old, fresh);
+    },
   });
 }
 

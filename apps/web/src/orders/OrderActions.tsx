@@ -46,19 +46,25 @@ function CourierPicker({
   order,
   etag,
   actions,
+  blocked,
   couriers,
 }: {
   order: Order;
   etag: string;
   actions: Actions;
+  // Идёт изменение или заказ только что изменил другой оператор — выбор недоступен.
+  blocked: boolean;
   couriers: ReturnType<typeof useQuery<Courier[]>>;
 }) {
   const currentId = order.courier ? String(order.courier.id) : null;
   const [selected, setSelected] = useState<string | null>(currentId);
-  // Заказ обновился (наше сохранение, повтор после конфликта) — выбор снова равен курьеру заказа.
-  const [prevCurrentId, setPrevCurrentId] = useState(currentId);
-  if (currentId !== prevCurrentId) {
-    setPrevCurrentId(currentId);
+  // Выбор привязан к версии заказа. Заказ получил новую версию (наше сохранение или другое
+  // действие, «Обновить», изменение другого оператора по SSE — о нём скажет плашка) — выбор
+  // сбрасывается на курьера заказа. Так «Назначить» не уйдёт поверх изменения, которого
+  // оператор не видел, и не будет бесконечных 412 из-за устаревшей версии.
+  const [prevEtag, setPrevEtag] = useState(etag);
+  if (etag !== prevEtag) {
+    setPrevEtag(etag);
     setSelected(currentId);
   }
 
@@ -91,7 +97,7 @@ function CourierPicker({
         searchable
         clearable
         nothingFoundMessage="Не найден"
-        disabled={actions.isPending}
+        disabled={blocked}
         maw={420}
       />
       {changed && (
@@ -99,7 +105,7 @@ function CourierPicker({
           <Button
             size="xs"
             loading={pending}
-            disabled={actions.isPending && !pending}
+            disabled={blocked && !pending}
             onClick={() => actions.run({ kind: 'courier', courierId }, etag)}
           >
             {courierId === null ? 'Снять курьера' : order.courier ? 'Сменить курьера' : 'Назначить'}
@@ -107,7 +113,7 @@ function CourierPicker({
           <Button
             size="xs"
             variant="subtle"
-            disabled={actions.isPending}
+            disabled={blocked}
             onClick={() => setSelected(currentId)}
           >
             Не менять
@@ -260,12 +266,39 @@ export function OrderActions({
   order,
   etag,
   actions,
+  locked = false,
 }: {
   order: Order;
   etag: string | null;
   actions: Actions;
+  // Заказ только что изменил другой оператор: на мгновение кнопки недоступны, чтобы клик не
+  // ушёл по надписи, сменившейся прямо под курсором. Отдельно от isPending: на снятие
+  // блокировки фокус не переставляется (это делается только по завершении своего запроса).
+  locked?: boolean;
 }) {
   const couriers = useQuery(couriersQuery);
+  const blocked = actions.isPending || locked;
+  // Блокировка после чужого изменения делает кнопки недоступными — фокус с них уходит на body.
+  // Когда она снята, возвращаем фокус туда, где он был (если оператор за это время никуда
+  // не перешёл).
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focusedBeforeLock = useRef<HTMLElement | null>(null);
+  const [prevLocked, setPrevLocked] = useState(locked);
+  if (locked !== prevLocked) {
+    setPrevLocked(locked);
+    if (locked) {
+      const active = document.activeElement;
+      focusedBeforeLock.current =
+        active instanceof HTMLElement && panelRef.current?.contains(active) ? active : null;
+    }
+  }
+  useEffect(() => {
+    if (locked) return;
+    const target = focusedBeforeLock.current;
+    focusedBeforeLock.current = null;
+    const lost = document.activeElement === null || document.activeElement === document.body;
+    if (target?.isConnected && lost) target.focus();
+  }, [locked]);
   const hintId = useId();
   // Кнопка, которую нажали, на время запроса становится недоступной (индикатор загрузки) и
   // теряет фокус — он уходит на body, и клавиатурный пользователь начинал бы обход страницы
@@ -300,6 +333,9 @@ export function OrderActions({
     </Title>
   );
   const [cancelOpened, setCancelOpened] = useState(false);
+  // Версия, при которой открыли отмену: пока оператор пишет причину, карточка может обновиться
+  // (SSE) — отмена уйдёт с той версией, которую он видел, и при чужом изменении получит 412.
+  const [cancelEtag, setCancelEtag] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   // Последний конфликт держим и после закрытия модалки — чтобы её текст не пропадал во время
   // анимации закрытия.
@@ -349,7 +385,7 @@ export function OrderActions({
   const cancelAllowed = isActionAllowed(order, { kind: 'cancel', reason: null });
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" ref={panelRef}>
       {heading}
 
       {actions.error && actions.lastAction?.kind !== 'cancel' && (
@@ -363,7 +399,7 @@ export function OrderActions({
           <Stack gap={4}>
             <Button
               loading={pendingKind === 'transition' || actions.retrying}
-              disabled={!nextAllowed || (actions.isPending && pendingKind !== 'transition')}
+              disabled={!nextAllowed || (blocked && pendingKind !== 'transition')}
               onClick={() => actions.run({ kind: 'transition', to: nextAction }, etag)}
               aria-describedby={nextHint ? hintId : undefined}
             >
@@ -380,10 +416,11 @@ export function OrderActions({
           <Button
             color="red"
             variant="light"
-            disabled={actions.isPending}
+            disabled={blocked}
             onClick={() => {
               actions.resetError();
               setReason('');
+              setCancelEtag(etag);
               setCancelOpened(true);
             }}
           >
@@ -393,7 +430,13 @@ export function OrderActions({
       </Group>
 
       {isCourierEditable(order.status) && (
-        <CourierPicker order={order} etag={etag} actions={actions} couriers={couriers} />
+        <CourierPicker
+          order={order}
+          etag={etag}
+          actions={actions}
+          blocked={blocked}
+          couriers={couriers}
+        />
       )}
 
       {/* Модалка открыта до ответа сервера. Успех — заказ стал отменённым, панель сменяется
@@ -409,7 +452,9 @@ export function OrderActions({
         }}
         pending={pendingKind === 'cancel'}
         error={actions.lastAction?.kind === 'cancel' ? actions.error : null}
-        onConfirm={() => actions.run({ kind: 'cancel', reason: reason.trim() || null }, etag)}
+        onConfirm={() =>
+          actions.run({ kind: 'cancel', reason: reason.trim() || null }, cancelEtag ?? etag)
+        }
         // Модалка закрылась, а вернуть фокус некуда (кнопка отмены исчезла или была недоступна,
         // когда модалка открылась) — на заголовок панели.
         onClosed={focusIfLostAfterClose}
