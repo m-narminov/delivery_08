@@ -6,9 +6,11 @@ import {
   lazyRouteComponent,
   Outlet,
   redirect,
+  stripSearchParams,
 } from '@tanstack/react-router';
 import { z } from 'zod';
 import { sessionQuery } from './api/session';
+import { DEFAULT_ORDERS_SEARCH, ordersSearchSchema } from './orders/search';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RouteError, RoutePending } from './pages/RouteStates';
 
@@ -79,6 +81,9 @@ const indexRoute = createRoute({
 const ordersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/orders',
+  validateSearch: ordersSearchSchema,
+  // Значения по умолчанию в адрес не пишем: /orders, а не /orders?sort=createdAt%3Adesc&page=1.
+  search: { middlewares: [stripSearchParams(DEFAULT_ORDERS_SEARCH)] },
   component: lazyRouteComponent(() => import('./pages/OrdersPage'), 'OrdersPage'),
 });
 
