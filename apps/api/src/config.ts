@@ -22,7 +22,15 @@ const configSchema = z
     DATABASE_URL: z.url(),
     // Секрет подписи сессий: короткий секрет подбирается перебором.
     JWT_SECRET: z.string().min(32),
-    SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
+    // Не больше недели: поток live-обновлений закрывается таймером в момент истечения сессии,
+    // а setTimeout в Node принимает не больше 2^31−1 мс (~596 ч) — при большем значении он
+    // срабатывает сразу, и поток закрывался бы сразу после открытия.
+    SESSION_TTL_HOURS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(24 * 7)
+      .default(12),
     // Secure по умолчанию: забытая переменная не должна отправлять сессию по HTTP.
     // Выключается явно и только для локальной разработки по http://localhost.
     COOKIE_SECURE: z.stringbool().default(true),

@@ -61,6 +61,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...VALID_ENV, TRUST_PROXY: ' ' })).toThrow(/TRUST_PROXY/);
   });
 
+  it('SESSION_TTL_HOURS — не больше недели (таймер закрытия потока SSE)', () => {
+    expect(loadConfig({ ...VALID_ENV, SESSION_TTL_HOURS: '168' }).SESSION_TTL_HOURS).toBe(168);
+    expect(() => loadConfig({ ...VALID_ENV, SESSION_TTL_HOURS: '169' })).toThrow(
+      /SESSION_TTL_HOURS/,
+    );
+  });
+
   it('не принимает неизвестный LOG_LEVEL', () => {
     expect(() => loadConfig({ ...VALID_ENV, LOG_LEVEL: 'verbose' })).toThrow(/LOG_LEVEL/);
   });
