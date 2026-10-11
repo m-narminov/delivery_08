@@ -1,7 +1,8 @@
 import type { Order } from '@foodster/shared';
 import { useMergedRef } from '@mantine/hooks';
 import { useEffect, useRef, useState, type Ref } from 'react';
-import { Skeleton, Stack, Table, Text, VisuallyHidden } from '@mantine/core';
+import { Group, Skeleton, Stack, Table, Text, VisuallyHidden } from '@mantine/core';
+import { CopyValue } from '../components/CopyValue';
 import { formatDateTime, formatMoney } from '../format';
 import { StatusBadge } from './StatusBadge';
 
@@ -97,20 +98,33 @@ export function OrdersTable({ orders, refreshing, viewportRef }: OrdersTableProp
             : orders.map((order) => (
                 <Table.Tr key={order.id}>
                   <Table.Td>
-                    <Text fw={600} size="sm">
-                      {order.id}
-                    </Text>
+                    <Group gap={4} wrap="nowrap">
+                      <Text fw={600} size="sm">
+                        {order.id}
+                      </Text>
+                      <CopyValue
+                        value={String(order.id)}
+                        label={`Скопировать номер заказа ${order.id}`}
+                      />
+                    </Group>
                   </Table.Td>
                   <Table.Td>
                     <StatusBadge status={order.status} />
                   </Table.Td>
                   <Table.Td>
-                    <Stack gap={0}>
-                      <Text size="sm">{order.customerName}</Text>
-                      <Text size="xs" c="dimmed">
-                        {order.customerPhone}
-                      </Text>
-                    </Stack>
+                    <Group gap="xs" wrap="nowrap" justify="space-between">
+                      <Stack gap={0}>
+                        <Text size="sm">{order.customerName}</Text>
+                        <Text size="xs" c="dimmed">
+                          {order.customerPhone}
+                        </Text>
+                      </Stack>
+                      {/* Имя и телефон одной строкой — удобно вставить в чат или письмо. */}
+                      <CopyValue
+                        value={`${order.customerName}, ${order.customerPhone}`}
+                        label={`Скопировать данные клиента заказа ${order.id}`}
+                      />
+                    </Group>
                   </Table.Td>
                   <Table.Td>{order.restaurant.name}</Table.Td>
                   <Table.Td>

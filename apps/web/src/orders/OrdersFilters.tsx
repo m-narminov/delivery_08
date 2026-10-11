@@ -22,6 +22,12 @@ const SORT_LABELS: Record<OrderSortOption, string> = {
   'amount:asc': 'Сумма: по возрастанию',
 };
 
+// Высота строки с подписью поля. Подпись — inline-block шрифтом 14px, но строку, в которой она
+// стоит, по высоте задаёт шрифт обёртки (наследуется от body, 16px) × межстрочный интервал:
+// 16 × 1,55 = 24,8 px. Так и измерено в браузере (верх поля — 24,8 px). На эту высоту сдвинута
+// кнопка сброса, чтобы стоять вровень с полями, а не с их подписями.
+const LABEL_HEIGHT = 'calc(var(--mantine-font-size-md) * var(--mantine-line-height))';
+
 interface OrdersFiltersProps {
   search: OrdersSearch;
   searchText: SearchText;
@@ -57,12 +63,17 @@ export function OrdersFilters({
   }
 
   return (
-    <Group align="flex-end" gap="sm" wrap="wrap">
+    // Подписи полей — на одном уровне (выравнивание по верху): выбранные статусы растягивают
+    // поле вниз, а не поднимают его подпись над остальными.
+    <Group align="flex-start" gap="sm" wrap="wrap">
       <TextInput
         ref={searchInputRef}
         label="Поиск по адресу"
         description="Опечатки и неверная раскладка не страшны"
         placeholder="Например, садовая 5"
+        // Подсказка под полем, а не между подписью и полем: иначе поле поиска было бы ниже
+        // соседних.
+        inputWrapperOrder={['label', 'input', 'description', 'error']}
         value={searchText.text}
         onChange={(event) => searchText.change(event.currentTarget.value)}
         // Длиннее API не примет: обрезать молча хуже, чем не дать ввести.
@@ -103,7 +114,13 @@ export function OrdersFilters({
         w={{ base: '100%', sm: 220 }}
       />
       {(hasFilters(search) || searchText.text !== '') && (
-        <Button variant="subtle" onClick={onReset}>
+        <Button
+          variant="subtle"
+          onClick={onReset}
+          // Вровень с полями, а не с их подписями. На узком экране поля на всю ширину и кнопка
+          // стоит на своей строке — там отступ не нужен.
+          mt={{ base: 0, sm: LABEL_HEIGHT }}
+        >
           Сбросить фильтры
         </Button>
       )}
