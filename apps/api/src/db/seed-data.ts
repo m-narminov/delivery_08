@@ -225,7 +225,7 @@ function generateOrder(now: Date, activeByCourier: number[], english: boolean): 
     restaurant: faker.number.int({ min: 0, max: SEED_COUNTS.restaurants - 1 }),
     courier,
     customerName: faker.person.fullName(),
-    customerPhone: faker.phone.number(),
+    customerPhone: russianMobilePhone(),
     deliveryAddress: english ? englishAddress() : russianAddress(),
     amountMinor: faker.number.int({ min: 3, max: 50 }) * 10_000,
     createdAt,
@@ -235,6 +235,12 @@ function generateOrder(now: Date, activeByCourier: number[], english: boolean): 
   };
 }
 
+// Российский мобильный в каноническом виде E.164: +7 и 10 цифр, первая — 9 (+79281824909).
+// В базе одно строгое представление; пробелы и скобки — дело отображения.
+function russianMobilePhone(): string {
+  return `+7${faker.helpers.replaceSymbols('9#########')}`;
+}
+
 // Чистая функция: без БД и сети, поэтому её легко проверить в unit-тесте.
 export function generateSeedData(now: Date): SeedData {
   faker.seed(RANDOM_SEED);
@@ -242,7 +248,7 @@ export function generateSeedData(now: Date): SeedData {
   const restaurants = RESTAURANT_NAMES.map((name) => ({ name }));
   const couriers = Array.from({ length: SEED_COUNTS.couriers }, () => ({
     name: faker.person.fullName(),
-    phone: faker.phone.number(),
+    phone: russianMobilePhone(),
   }));
   const operators = Array.from({ length: SEED_COUNTS.operators }, (_, index) => ({
     name: faker.person.fullName(),

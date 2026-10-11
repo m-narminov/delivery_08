@@ -3,7 +3,7 @@ import { useMergedRef } from '@mantine/hooks';
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { Group, Skeleton, Stack, Table, Text, VisuallyHidden } from '@mantine/core';
 import { CopyValue } from '../components/CopyValue';
-import { formatDateTime, formatMoney } from '../format';
+import { formatDateTime, formatMoney, formatPhone } from '../format';
 import { StatusBadge } from './StatusBadge';
 
 const COLUMNS = [
@@ -116,12 +116,12 @@ export function OrdersTable({ orders, refreshing, viewportRef }: OrdersTableProp
                       <Stack gap={0}>
                         <Text size="sm">{order.customerName}</Text>
                         <Text size="xs" c="dimmed">
-                          {order.customerPhone}
+                          {formatPhone(order.customerPhone)}
                         </Text>
                       </Stack>
                       {/* Имя и телефон одной строкой — удобно вставить в чат или письмо. */}
                       <CopyValue
-                        value={`${order.customerName}, ${order.customerPhone}`}
+                        value={`${order.customerName}, ${formatPhone(order.customerPhone)}`}
                         label={`Скопировать данные клиента заказа ${order.id}`}
                       />
                     </Group>

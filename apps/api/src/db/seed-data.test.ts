@@ -41,6 +41,14 @@ describe('generateSeedData', () => {
     expect(Math.max(...active.values())).toBeLessThanOrEqual(MAX_ACTIVE_DELIVERIES_PER_COURIER);
   });
 
+  it('телефоны клиентов и курьеров — российские мобильные в формате E.164: +79 и 9 цифр', () => {
+    const phones = [
+      ...data.orders.map((order) => order.customerPhone),
+      ...data.couriers.map((courier) => courier.phone),
+    ];
+    for (const phone of phones) expect(phone).toMatch(/^\+79\d{9}$/);
+  });
+
   it('picked_up и delivered всегда с курьером', () => {
     const withoutCourier = data.orders.filter(
       (order) =>
