@@ -18,11 +18,10 @@ import {
 import { useDocumentTitle } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, useCanGoBack, useRouter } from '@tanstack/react-router';
-import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useId, useRef, type ComponentProps, type ReactNode } from 'react';
 import { ApiError } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { orderEventsQuery, orderQuery } from '../api/orders';
-import { subscribeToOrderChanges } from '../api/stream';
 import { AnchorLink } from '../components/AnchorLink';
 import { Copyable } from '../components/Copyable';
 import { ORDER_PAGE_MAX_WIDTH } from '../layouts/sizes';
@@ -30,39 +29,11 @@ import { formatDateTime, formatMoney, formatPhone, phoneE164 } from '../format';
 import { describeEvent, eventActorName } from '../orders/events';
 import { OrderActions } from '../orders/OrderActions';
 import { useOrderActions } from '../orders/useOrderActions';
+import { useRemoteChange } from '../orders/useRemoteChange';
 import { StatusBadge } from '../orders/StatusBadge';
 
 const route = getRouteApi('/app/orders/$orderId');
 const appRoute = getRouteApi('/app');
-
-// Сколько после чужого изменения кнопки действий недоступны: надпись кнопки могла смениться
-// прямо под курсором («Готовится» → «Готов к выдаче»), и клик ушёл бы не туда.
-const LOCK_AFTER_REMOTE_CHANGE_MS = 1_000;
-
-// Последнее изменение этого заказа, пришедшее по SSE от другого оператора (по id автора).
-// Изменения под своим именем не показываем — включая сделанные в другой вкладке: обычно это
-// то же действие, о котором здесь или там уже сказало уведомление «Статус изменён» и т. п.
-// Изменение без автора (клиентское приложение) показываем.
-function useRemoteChange(orderId: number) {
-  const { session } = appRoute.useRouteContext();
-  const [event, setEvent] = useState<OrderEvent | null>(null);
-  const [locked, setLocked] = useState(false);
-  useEffect(() => {
-    let unlockTimer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = subscribeToOrderChanges((change) => {
-      if (change.orderId !== orderId || change.event.actor?.id === session.operator.id) return;
-      setEvent(change.event);
-      setLocked(true);
-      clearTimeout(unlockTimer);
-      unlockTimer = setTimeout(() => setLocked(false), LOCK_AFTER_REMOTE_CHANGE_MS);
-    });
-    return () => {
-      unsubscribe();
-      clearTimeout(unlockTimer);
-    };
-  }, [orderId, session.operator.id]);
-  return { event, locked, dismiss: () => setEvent(null) };
-}
 
 function isNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
@@ -209,7 +180,8 @@ export function OrderPage() {
   const events = useQuery(orderEventsQuery(orderId));
   const detailsTitleId = useId();
   const actions = useOrderActions(orderId);
-  const remoteChange = useRemoteChange(orderId);
+  const { session } = appRoute.useRouteContext();
+  const remoteChange = useRemoteChange(orderId, session.operator.id);
   const titleRef = useRef<HTMLHeadingElement>(null);
   // Номер заказа в заголовке вкладки: видно в списке вкладок и истории браузера (WCAG 2.4.2).
   // Хук только записывает заголовок и не возвращает прежний — поэтому его задаёт каждая
