@@ -4,7 +4,7 @@ import {
   SEARCH_QUERY_MAX_LENGTH,
   type OrderSortOption,
 } from '@foodster/shared';
-import { Button, Group, MultiSelect, Select, TextInput } from '@mantine/core';
+import { Button, Group, Input, MultiSelect, Select, TextInput } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import type { Ref } from 'react';
 import { errorMessage } from '../api/errors';
@@ -33,6 +33,7 @@ interface OrdersFiltersProps {
   searchText: SearchText;
   searchInputRef: Ref<HTMLInputElement>;
   onChange: (patch: Partial<OrdersSearch>) => void;
+  onClearSearch: () => void;
   onReset: () => void;
 }
 
@@ -41,6 +42,7 @@ export function OrdersFilters({
   searchText,
   searchInputRef,
   onChange,
+  onClearSearch,
   onReset,
 }: OrdersFiltersProps) {
   const restaurants = useQuery(restaurantsQuery);
@@ -80,6 +82,11 @@ export function OrdersFilters({
         maxLength={SEARCH_QUERY_MAX_LENGTH}
         w={{ base: '100%', sm: 300 }}
         type="search"
+        rightSection={
+          searchText.text !== '' ? (
+            <Input.ClearButton aria-label="Очистить поиск" onClick={onClearSearch} />
+          ) : undefined
+        }
       />
       <MultiSelect
         label="Статус"

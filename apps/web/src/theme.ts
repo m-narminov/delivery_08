@@ -42,8 +42,21 @@ export const theme = createTheme({
 // Приглушённый текст (c="dimmed": подсказки, подписи). Стандартный у Mantine не проходит
 // WCAG 4,5: gray-6 на белом — 3,32, dark-2 на #242424 — 4,04. Свой: gray-7 на белом — 8,18,
 // dark-1 на #242424 — 7,83. Остальные переменные Mantine остаются стандартными (deepMerge).
+// Своя переменная — разделители столбцов таблиц: бледнее границ строк (у Mantine gray-3 и
+// dark-4), чтобы делить ячейки, не расчерчивая таблицу в клетку. Полупрозрачные, а не цвет
+// палитры: фоны строк разные (белый или dark-7, полосы, наведение), и любой сплошной цвет
+// на одном из них пропадал — в тёмной теме фон строки под курсором и есть dark-5.
+// Тень у края прокручиваемой таблицы: на тёмном фоне слабая тень не видна, поэтому плотнее.
 export const cssVariablesResolver: CSSVariablesResolver = () => ({
   variables: {},
-  light: { '--mantine-color-dimmed': 'var(--mantine-color-gray-7)' },
-  dark: { '--mantine-color-dimmed': 'var(--mantine-color-dark-1)' },
+  light: {
+    '--mantine-color-dimmed': 'var(--mantine-color-gray-7)',
+    '--foodster-table-column-border': 'rgba(0, 0, 0, 0.08)',
+    '--foodster-scroll-shadow': 'rgba(0, 0, 0, 0.12)',
+  },
+  dark: {
+    '--mantine-color-dimmed': 'var(--mantine-color-dark-1)',
+    '--foodster-table-column-border': 'rgba(255, 255, 255, 0.08)',
+    '--foodster-scroll-shadow': 'rgba(0, 0, 0, 0.5)',
+  },
 });

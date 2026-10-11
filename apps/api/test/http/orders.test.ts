@@ -1,8 +1,8 @@
 import type { Courier, Order, OrderEvent, OrderList, Restaurant } from '@foodster/shared';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Database } from '../../src/db/client';
-import { operators } from '../../src/db/schema';
+import { operators, orders } from '../../src/db/schema';
 import { SESSION_COOKIE } from '../../src/http/session';
 import { createTestApp, insertOperator, loginAs, type TestApp } from '../app';
 import { insertCourier, insertOrder, insertOrderEvent, insertRestaurant } from '../factories';
@@ -228,15 +228,61 @@ describe('GET /api/orders — поиск по адресу', () => {
     ['транслит', 'sadovaya', 'o1'],
     ['адрес латиницей', 'oak', 'o3'],
     ['латиница в русской раскладке', 'щфл', 'o3'],
-  ] as const)('%s: «%s» → %s первым', async (_case, q, expected) => {
-    const found = await listIds(`?q=${encodeURIComponent(q)}`);
-    expect(found[0]).toBe(ids[expected]);
+  ] as const)('%s: «%s» → находит %s', async (_case, q, expected) => {
+    expect(await listIds(`?q=${encodeURIComponent(q)}`)).toContain(ids[expected]);
   });
 
-  it('самые похожие адреса — первыми', async () => {
-    const found = await listIds(`?q=${encodeURIComponent('садовая')}`);
-    expect(found.slice(0, 2)).toEqual([ids.o1, ids.o4]);
+  // По похожести o1 выше o4, а по сумме и по дате создания — наоборот: сортировка, в том числе
+  // по умолчанию (новые сверху), главнее похожести.
+  it.each([
+    ['по умолчанию', ''],
+    ['amount:asc', '&sort=amount:asc'],
+    ['createdAt:desc', '&sort=createdAt:desc'],
+  ])('сортировка (%s) — главнее похожести', async (_case, sort) => {
+    const found = await listIds(`?q=${encodeURIComponent('садовая')}${sort}`);
+    expect(found.filter((id) => id === ids.o1 || id === ids.o4)).toEqual([ids.o4, ids.o1]);
     expect(found).not.toContain(ids.o5);
+  });
+
+  // Временные заказы: остальные тесты считают фиксированный набор, поэтому удаляем их и при
+  // падении (в том числе если упала вторая вставка).
+  async function withTemporaryOrders(
+    values: Parameters<typeof insertOrder>[1][],
+    check: (orderIds: number[]) => Promise<void>,
+  ) {
+    const orderIds: number[] = [];
+    try {
+      for (const value of values) orderIds.push((await insertOrder(db, value)).id);
+      await check(orderIds);
+    } finally {
+      if (orderIds.length > 0) await db.delete(orders).where(inArray(orders.id, orderIds));
+    }
+  }
+
+  it('при равенстве по выбранной сортировке выше более похожий адрес', async () => {
+    // Сумма одна. Более похожий адрес вставлен первым: без сравнения похожести id по убыванию
+    // поставил бы его вторым. «cfljdfz» — «садовая» в английской раскладке: похожесть считается
+    // по лучшему из вариантов запроса, а не только по исходному тексту.
+    await withTemporaryOrders(
+      [
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, Садовая ул., д. 7',
+          amountMinor: 77_777,
+        },
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, Садово-Сухаревская ул., д. 2',
+          amountMinor: 77_777,
+        },
+      ],
+      async (pair) => {
+        for (const q of ['садовая', 'cfljdfz']) {
+          const found = await listIds(`?q=${encodeURIComponent(q)}&sort=amount:desc`);
+          expect(found.filter((id) => pair.includes(id))).toEqual(pair);
+        }
+      },
+    );
   });
 
   it('поиск сочетается с фильтром', async () => {

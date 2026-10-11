@@ -68,6 +68,16 @@ export function OrdersPage() {
     const q = searchText.takePending();
     void navigate({ search: (prev) => ({ ...prev, q, ...patch, page: 1 }) });
   };
+  // Очистка поиска. Если поиск уже в адресе — переход на список без поиска с первой страницы;
+  // если нет (текст ещё не отправлен) — только очистка поля. Фокус возвращаем в поле: кнопка
+  // очистки исчезает, и фокус иначе ушёл бы в никуда.
+  const clearSearch = () => {
+    searchText.clear();
+    if (pendingQ !== undefined) {
+      void navigate({ search: (prev) => ({ ...prev, q: undefined, page: 1 }) });
+    }
+    searchInputRef.current?.focus();
+  };
   // Сброс — только фильтров; сортировка и размер страницы остаются. Фокус — в поиск: кнопка
   // сброса исчезает, и фокус иначе ушёл бы в никуда.
   const resetFilters = () => {
@@ -105,6 +115,7 @@ export function OrdersPage() {
           searchText={searchText}
           searchInputRef={searchInputRef}
           onChange={changeFilters}
+          onClearSearch={clearSearch}
           onReset={resetFilters}
         />
       </Paper>

@@ -41,15 +41,23 @@ function selectOrders(db: Executor) {
 
 export type OrderRow = Awaited<ReturnType<typeof selectOrders>>[number];
 
-// Второй ключ сортировки — id: при равных значениях порядок стабилен между страницами.
+// Ключ сортировки и направление для id. id — последний ключ: при равных значениях порядок
+// стабилен между страницами.
 const SORTS = {
-  'createdAt:desc': [desc(orders.createdAt), desc(orders.id)],
-  'createdAt:asc': [asc(orders.createdAt), asc(orders.id)],
-  'updatedAt:desc': [desc(orders.updatedAt), desc(orders.id)],
-  'updatedAt:asc': [asc(orders.updatedAt), asc(orders.id)],
-  'amount:desc': [desc(orders.amountMinor), desc(orders.id)],
-  'amount:asc': [asc(orders.amountMinor), asc(orders.id)],
-} satisfies Record<OrderSortOption, SQL[]>;
+  'createdAt:desc': { key: desc(orders.createdAt), id: desc(orders.id) },
+  'createdAt:asc': { key: asc(orders.createdAt), id: asc(orders.id) },
+  'updatedAt:desc': { key: desc(orders.updatedAt), id: desc(orders.id) },
+  'updatedAt:asc': { key: asc(orders.updatedAt), id: asc(orders.id) },
+  'amount:desc': { key: desc(orders.amountMinor), id: desc(orders.id) },
+  'amount:asc': { key: asc(orders.amountMinor), id: asc(orders.id) },
+} satisfies Record<OrderSortOption, { key: SQL; id: SQL }>;
+
+// relevance — похожесть адреса на поиск; есть, только когда идёт поиск. Выбранная сортировка
+// главная, похожесть решает между равными по ней (одна сумма), последним — id.
+function orderByFor(sort: OrderSortOption, relevance: SQL | undefined): SQL[] {
+  const { key, id } = SORTS[sort];
+  return relevance ? [key, desc(relevance), id] : [key, id];
+}
 
 export async function listOrders(
   db: Database,
@@ -85,8 +93,7 @@ export async function listOrders(
       const [counted] = await tx.select({ total: count() }).from(orders).where(where);
       const rows = await selectOrders(tx)
         .where(where)
-        // При поиске сначала самые похожие адреса, затем выбранная сортировка.
-        .orderBy(...(relevance ? [desc(relevance)] : []), ...SORTS[query.sort])
+        .orderBy(...orderByFor(query.sort, relevance))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize);
       return { rows, total: counted?.total ?? 0 };

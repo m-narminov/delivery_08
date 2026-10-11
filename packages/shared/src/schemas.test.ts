@@ -39,6 +39,8 @@ describe('orderListQuerySchema', () => {
     ['pageSize', '101'],
     ['restaurantId', '-1'],
     ['sort', 'name:asc'],
+    // По похожести отдельно не сортируют: она решает только между равными по sort.
+    ['sort', 'relevance'],
   ])('отклоняет %s=%s', (key, value) => {
     expect(orderListQuerySchema.safeParse({ [key]: value }).success).toBe(false);
   });

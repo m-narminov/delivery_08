@@ -52,7 +52,11 @@ export const orderListQuerySchema = z.object({
     .max(SEARCH_QUERY_MAX_LENGTH)
     .transform((value) => value || undefined)
     .optional(),
-  sort: z.enum(ORDER_SORT_OPTIONS).default('createdAt:desc'),
+  // При поиске похожесть адреса решает только между равными по sort (одна сумма).
+  sort: z
+    .enum(ORDER_SORT_OPTIONS)
+    .default('createdAt:desc')
+    .describe('With q, address similarity breaks ties'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
 });

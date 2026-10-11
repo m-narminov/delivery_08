@@ -1,5 +1,6 @@
-import { ActionIcon, CheckIcon, Tooltip, VisuallyHidden } from '@mantine/core';
+import { ActionIcon, Box, CheckIcon, Group, Tooltip, VisuallyHidden } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
+import type { ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 
 // Иконка «копировать» — две карточки; рисуем сами, чтобы не тянуть библиотеку иконок ради одной.
@@ -30,7 +31,7 @@ function CopyIcon() {
 // области role="status": смену имени кнопки в фокусе разные дикторы объявляют по-разному.
 // useClipboard, а не CopyButton: CopyButton ошибку наружу не отдаёт, и неудачное копирование
 // (нет доступа к буферу, страница не по https) выглядело бы как успешное.
-export function CopyValue({ value, label }: { value: string; label: string }) {
+function CopyValue({ value, label }: { value: string; label: string }) {
   const clipboard = useClipboard({ timeout: 1500 });
   const result = clipboard.error ? 'Не удалось скопировать' : clipboard.copied ? 'Скопировано' : '';
   return (
@@ -40,6 +41,10 @@ export function CopyValue({ value, label }: { value: string; label: string }) {
         withArrow
         position="right"
         events={{ hover: true, focus: true, touch: false }}
+        // fixed: подсказка позиционируется от окна и не влияет на ширину страницы. С absolute
+        // гаснущая подсказка кнопки, уехавшей с прокруткой таблицы за край экрана, на время
+        // анимации растягивала страницу вправо (на телефоне расползалась шапка).
+        floatingStrategy="fixed"
       >
         <ActionIcon
           variant="subtle"
@@ -61,5 +66,31 @@ export function CopyValue({ value, label }: { value: string; label: string }) {
       </Tooltip>
       <VisuallyHidden role="status">{result}</VisuallyHidden>
     </>
+  );
+}
+
+interface CopyableProps {
+  // Что копируется (может отличаться от показанного: например, имя и телефон одной строкой).
+  value: string;
+  // Подпись кнопки для экранного диктора.
+  label: string;
+  // Шире этого содержимое не растёт, а переносится (длинный адрес). Без ограничения — в строку.
+  maxWidth?: string;
+  // Что показывается.
+  children: ReactNode;
+}
+
+// Значение с кнопкой копирования — одна раскладка для всех мест, где что-то копируют. Кнопка
+// прижата к правому краю, содержимое — своей ширины (max-content, не шире maxWidth). В столбце
+// таблицы шириной «по содержимому» (width: 1% у заголовка) ширину задаёт самое длинное
+// значение, и кнопки всех строк стоят ровно за ним. Кнопка не сжимается.
+export function Copyable({ value, label, maxWidth, children }: CopyableProps) {
+  return (
+    <Group gap={4} wrap="nowrap" justify="space-between">
+      {/* overflow-wrap: anywhere — переносится и значение без пробелов (ссылка, код), иначе оно
+          вылезло бы поверх кнопки и соседних столбцов. */}
+      <Box style={{ width: 'max-content', maxWidth, overflowWrap: 'anywhere' }}>{children}</Box>
+      <CopyValue value={value} label={label} />
+    </Group>
   );
 }
