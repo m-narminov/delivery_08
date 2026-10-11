@@ -133,14 +133,32 @@ describe('If-Match: обнаружение конкурентных измене
     expect(await events(order.id)).toHaveLength(1);
   });
 
-  it('сценарий из задания: B назначил Alex, A с устаревшей версией назначает Maria → 412, Alex остаётся', async () => {
+  it('сценарий из задания: B назначил Alex, A с устаревшей версией назначает Maria → 412, Alex остаётся, виден автор B', async () => {
     const order = await newOrder('preparing');
     const alex = await newCourier();
     const maria = await newCourier();
-    expect((await setCourier(order.id, alex.id, '"v1"')).statusCode).toBe(200);
+    // Второй оператор со своей сессией.
+    const operatorB = await insertOperator(db, { name: 'Борис Операторов' });
+    const sessionB = await loginAs(app, operatorB.id);
+
+    const byB = await send(
+      'PUT',
+      `/api/orders/${order.id}/courier`,
+      { courierId: alex.id },
+      '"v1"',
+      sessionB,
+    );
+    expect(byB.statusCode).toBe(200);
+    // Оператор A всё ещё видит версию 1.
     const response = await setCourier(order.id, maria.id, '"v1"');
     expect(response.statusCode).toBe(412);
-    expect(versionConflictProblemSchema.parse(response.json()).current?.courier?.id).toBe(alex.id);
+    const body = versionConflictProblemSchema.parse(response.json());
+    expect(body.current?.courier?.id).toBe(alex.id);
+    expect(body.lastChange).toMatchObject({
+      action: 'courier_assigned',
+      toCourier: { id: alex.id },
+      actor: { id: operatorB.id, name: 'Борис Операторов' },
+    });
   });
 
   it('слабый ETag в If-Match не подходит (RFC 9110: только строгое сравнение) → 412', async () => {
@@ -240,11 +258,13 @@ describe('PUT /api/orders/:id/courier', () => {
       'courier_changed',
       'courier_unassigned',
     ]);
-    const changed = (await events(order.id))[1];
-    expect(changed).toMatchObject({
+    const history = await events(order.id);
+    expect(history[1]).toMatchObject({
       fromCourier: { id: first.id },
       toCourier: { id: second.id },
     });
+    // Автор — у каждой записи, не только у смены статуса.
+    expect(history.map((event) => event.actor?.id)).toEqual([operatorId, operatorId, operatorId]);
   });
 
   // Повтор того же запроса (например, после обрыва сети) безопасен — даже когда курьера
@@ -322,6 +342,22 @@ describe('лимит: не больше 3 активных доставок у �
     });
   });
 
+  it('смена курьера на занятого (A → B, у B три активные) → 409, заказ остаётся у A', async () => {
+    const first = await newCourier();
+    const busy = await busyCourier();
+    const order = await newOrder('ready', first.id);
+    const response = await setCourier(order.id, busy.id, '"v1"');
+    expect(response.statusCode).toBe(409);
+    expect(problemBody(response).code).toBe('COURIER_LIMIT_REACHED');
+    expect(await events(order.id)).toEqual([]);
+    const card = await app.inject({
+      method: 'GET',
+      url: `/api/orders/${order.id}`,
+      cookies: { [SESSION_COOKIE]: session },
+    });
+    expect(card.json<Order>()).toMatchObject({ courier: { id: first.id }, version: 1 });
+  });
+
   it('третья активная доставка назначается — граница лимита включительно', async () => {
     const courier = await newCourier();
     await newOrder('ready', courier.id);
@@ -375,6 +411,7 @@ describe('POST /api/orders/:id/cancel', () => {
         fromStatus: 'ready',
         toStatus: 'cancelled',
         reason: 'Клиент передумал',
+        actor: { id: operatorId },
       },
     ]);
 
