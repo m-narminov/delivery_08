@@ -67,6 +67,8 @@ const setCourier = (id: number, courierId: number | null, ifMatch?: string) =>
   send('PUT', `/api/orders/${id}/courier`, { courierId }, ifMatch);
 const cancel = (id: number, payload: object, ifMatch?: string) =>
   send('POST', `/api/orders/${id}/cancel`, payload, ifMatch);
+// Причина отмены обязательна и не короче 30 символов (здесь 42).
+const REASON = 'Клиент передумал и попросил отменить заказ';
 
 async function activeDeliveries(courierId: number): Promise<number | undefined> {
   const response = await app.inject({
@@ -90,7 +92,7 @@ describe('If-Match: обнаружение конкурентных измене
   it.each([
     ['переход', (id: number) => transition(id, 'accepted')],
     ['курьер', (id: number) => setCourier(id, null)],
-    ['отмена', (id: number) => cancel(id, {})],
+    ['отмена', (id: number) => cancel(id, { reason: REASON })],
   ])('%s без If-Match → 428', async (_case, act) => {
     const order = await newOrder();
     const response = await act(order.id);
@@ -186,6 +188,8 @@ describe('POST /api/orders/:id/transitions', () => {
     const response = await transition(order.id, 'accepted', '"v1"');
     expect(response.statusCode).toBe(200);
     expect(response.headers.etag).toBe('"v2"');
+    // CDN не должен сжатием ослабить ETag: иначе следующее изменение получило бы 412.
+    expect(response.headers['cache-control']).toBe('no-store, no-transform');
     const body = response.json<Order>();
     expect(body).toMatchObject({ status: 'accepted', version: 2 });
     expect(Date.parse(body.updatedAt)).toBeGreaterThan(order.updatedAt.getTime());
@@ -397,7 +401,7 @@ describe('POST /api/orders/:id/cancel', () => {
   it('отмена из ready: причина в audit, курьер остаётся в заказе, но место у курьера освобождается', async () => {
     const courier = await newCourier();
     const order = await newOrder('ready', courier.id);
-    const response = await cancel(order.id, { reason: '  Клиент передумал  ' }, '"v1"');
+    const response = await cancel(order.id, { reason: `  ${REASON}  ` }, '"v1"');
     expect(response.statusCode).toBe(200);
     expect(response.headers.etag).toBe('"v2"');
     expect(response.json<Order>()).toMatchObject({
@@ -410,7 +414,7 @@ describe('POST /api/orders/:id/cancel', () => {
         action: 'cancelled',
         fromStatus: 'ready',
         toStatus: 'cancelled',
-        reason: 'Клиент передумал',
+        reason: REASON,
         actor: { id: operatorId },
       },
     ]);
@@ -418,16 +422,31 @@ describe('POST /api/orders/:id/cancel', () => {
     expect(await activeDeliveries(courier.id)).toBe(0);
   });
 
-  it('без причины — reason null', async () => {
+  it.each([
+    ['без причины', {}],
+    ['пустая', { reason: '' }],
+    ['из пробелов', { reason: '   ' }],
+    ['29 символов после обрезки пробелов', { reason: `  ${'я'.repeat(29)}  ` }],
+  ])('причина %s → 400 у поля reason, заказ не меняется', async (_case, payload) => {
     const order = await newOrder();
-    expect((await cancel(order.id, {}, '"v1"')).statusCode).toBe(200);
-    expect(await events(order.id)).toMatchObject([{ action: 'cancelled', reason: null }]);
+    const response = await cancel(order.id, payload, '"v1"');
+    expect(response.statusCode).toBe(400);
+    expect(problemBody(response)).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [expect.objectContaining({ path: '/reason' })],
+    });
+    expect(await events(order.id)).toEqual([]);
+  });
+
+  it.each([30, 2000])('ровно %i символов — граница включительно', async (length) => {
+    const order = await newOrder();
+    expect((await cancel(order.id, { reason: 'я'.repeat(length) }, '"v1"')).statusCode).toBe(200);
   });
 
   it.each(['picked_up', 'delivered'] as const)('из %s отменить нельзя → 409', async (status) => {
     const courier = await newCourier();
     const order = await newOrder(status, courier.id);
-    const response = await cancel(order.id, {}, '"v1"');
+    const response = await cancel(order.id, { reason: REASON }, '"v1"');
     expect(response.statusCode).toBe(409);
     expect(problemBody(response)).toMatchObject({
       code: 'TRANSITION_NOT_ALLOWED',
@@ -437,7 +456,7 @@ describe('POST /api/orders/:id/cancel', () => {
 
   it('уже отменённый заказ повторно → 409', async () => {
     const order = await newOrder('cancelled');
-    expect((await cancel(order.id, {}, '"v1"')).statusCode).toBe(409);
+    expect((await cancel(order.id, { reason: REASON }, '"v1"')).statusCode).toBe(409);
   });
 
   it('причина длиннее 2000 символов → 400', async () => {
@@ -447,7 +466,7 @@ describe('POST /api/orders/:id/cancel', () => {
 
   it('символ NUL в причине → 400, а не 500 от Postgres', async () => {
     const order = await newOrder();
-    const response = await cancel(order.id, { reason: 'клиент\u0000передумал' }, '"v1"');
+    const response = await cancel(order.id, { reason: `${REASON}\u0000` }, '"v1"');
     expect(response.statusCode).toBe(400);
     expect(problemBody(response).code).toBe('VALIDATION_FAILED');
   });
@@ -497,7 +516,7 @@ describe('гонки: одновременные запросы', () => {
     const order = await newOrder();
     const responses = await Promise.all([
       transition(order.id, 'accepted', '"v1"'),
-      cancel(order.id, {}, '"v1"'),
+      cancel(order.id, { reason: REASON }, '"v1"'),
     ]);
     expect(statuses(responses)).toEqual([200, 412]);
     expect(await events(order.id)).toHaveLength(1);

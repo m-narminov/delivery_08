@@ -1,5 +1,6 @@
 import {
   CANCEL_REASON_MAX_LENGTH,
+  CANCEL_REASON_MIN_LENGTH,
   courierHasCapacity,
   isActiveDelivery,
   isCourierEditable,
@@ -89,7 +90,10 @@ function CourierPicker({
       <Select
         label="Курьер"
         placeholder={couriers.isPending ? 'Загрузка…' : 'Не назначен'}
-        description={`Рядом с именем — активные доставки курьера (не больше ${MAX_ACTIVE_DELIVERIES_PER_COURIER})`}
+        // Активные — только «Готов к выдаче» и «У курьера»: назначение на заказ, который ещё не
+        // готов к выдаче, число не меняет (лимит проверят при переходе в «Готов к выдаче»).
+        // Неразрывные пробелы: «(не больше 3)» не разрывается между строк.
+        description={`Рядом с именем — заказы курьера «Готов к выдаче» и «У курьера» (не\u00a0больше\u00a0${MAX_ACTIVE_DELIVERIES_PER_COURIER})`}
         data={data}
         value={selected}
         onChange={setSelected}
@@ -145,8 +149,23 @@ function CancelModal({
   pending: boolean;
   error: Error | null;
 }) {
-  // Ошибка самого поля (400 VALIDATION_FAILED) — у поля; остальное — сверху.
-  const reasonError = fieldError(error, '/reason');
+  // Короткую причину не отправляем: подсказка у поля появляется после попытки отменить и
+  // пропадает, как только длины хватает. Ошибка поля от сервера (400) — там же; остальное сверху.
+  const [attempted, setAttempted] = useState(false);
+  // Подсказка — только для текущего открытия: при новом открытии сбрасывается. Сброс при
+  // открытии, а не в конце анимации закрытия: та приходит не всегда (без анимаций — никогда).
+  const [wasOpened, setWasOpened] = useState(opened);
+  if (opened !== wasOpened) {
+    setWasOpened(opened);
+    if (opened) setAttempted(false);
+  }
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const length = reason.trim().length;
+  const tooShort = length < CANCEL_REASON_MIN_LENGTH;
+  const reasonError =
+    (attempted && tooShort
+      ? `Не короче ${CANCEL_REASON_MIN_LENGTH} символов — сейчас ${length}`
+      : undefined) ?? fieldError(error, '/reason');
   return (
     // Пока запрос идёт, модалку не закрыть: иначе панель разблокировалась бы раньше ответа.
     <Modal
@@ -166,7 +185,11 @@ function CancelModal({
         {error && !reasonError && <Alert color="red">{errorMessage(error)}</Alert>}
         <Textarea
           label="Причина"
-          description={`Необязательно. ${reason.length} из ${CANCEL_REASON_MAX_LENGTH}`}
+          // Счётчик — по всему тексту, как и ограничение длины поля (maxLength); минимум — без
+          // пробелов по краям, как проверяет сервер.
+          description={`Не короче ${CANCEL_REASON_MIN_LENGTH} символов: что случилось и по чьей инициативе. ${reason.length} из ${CANCEL_REASON_MAX_LENGTH}`}
+          required
+          ref={reasonRef}
           value={reason}
           onChange={(event) => onReasonChange(event.currentTarget.value)}
           error={reasonError}
@@ -181,7 +204,17 @@ function CancelModal({
           <Button variant="default" onClick={onClose} disabled={pending}>
             Не отменять
           </Button>
-          <Button color="red" loading={pending} onClick={onConfirm}>
+          <Button
+            color="red"
+            loading={pending}
+            onClick={() => {
+              setAttempted(true);
+              // Короткая причина: фокус в поле — диктор прочтёт ошибку вместе с ним (она связана
+              // с полем через aria-describedby), а оператор сразу продолжит писать.
+              if (tooShort) reasonRef.current?.focus();
+              else onConfirm();
+            }}
+          >
             Отменить заказ
           </Button>
         </Group>
@@ -382,7 +415,7 @@ export function OrderActions({
       : courierFull
         ? `У курьера уже ${courier.activeDeliveries} из ${MAX_ACTIVE_DELIVERIES_PER_COURIER} активных доставок — переход отклонят`
         : null;
-  const cancelAllowed = isActionAllowed(order, { kind: 'cancel', reason: null });
+  const cancelAllowed = isActionAllowed(order, { kind: 'cancel', reason: '' });
 
   return (
     <Stack gap="md" ref={panelRef}>
@@ -452,9 +485,7 @@ export function OrderActions({
         }}
         pending={pendingKind === 'cancel'}
         error={actions.lastAction?.kind === 'cancel' ? actions.error : null}
-        onConfirm={() =>
-          actions.run({ kind: 'cancel', reason: reason.trim() || null }, cancelEtag ?? etag)
-        }
+        onConfirm={() => actions.run({ kind: 'cancel', reason: reason.trim() }, cancelEtag ?? etag)}
         // Модалка закрылась, а вернуть фокус некуда (кнопка отмены исчезла или была недоступна,
         // когда модалка открылась) — на заголовок панели.
         onClosed={focusIfLostAfterClose}

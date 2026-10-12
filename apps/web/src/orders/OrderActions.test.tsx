@@ -1,7 +1,7 @@
 import type { Courier, Order } from '@foodster/shared';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,9 @@ import { OrderActions } from './OrderActions';
 import type { useOrderActions } from './useOrderActions';
 
 type Actions = ReturnType<typeof useOrderActions>;
+
+// Причина отмены не короче 30 символов (здесь 42).
+const REASON = 'Клиент передумал и попросил отменить заказ';
 
 // Действия — заглушка: здесь проверяется, что панель показывает и что вызывает, а не запросы.
 function makeActions(overrides: Partial<Actions> = {}): Actions {
@@ -111,7 +114,7 @@ describe('OrderActions — только допустимые действия', 
   it('пока идёт изменение, всё недоступно', () => {
     renderPanel(
       makeOrder({ status: 'accepted' }),
-      makeActions({ isPending: true, pendingAction: { kind: 'cancel', reason: null } }),
+      makeActions({ isPending: true, pendingAction: { kind: 'cancel', reason: REASON } }),
     );
     const disabled = (name: string) =>
       screen.getByRole<HTMLButtonElement>('button', { name }).disabled;
@@ -143,22 +146,55 @@ describe('отмена с причиной', () => {
     const order = makeOrder({ status: 'accepted' });
     const actions = renderPanel(order);
     await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), '  Клиент передумал ');
-    screen.getByText('Необязательно. 19 из 2000');
+    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), `  ${REASON} `);
+    // Счётчик — по всему тексту (как maxLength): 2 + 42 + 1.
+    screen.getByText(/45 из 2000$/);
     // Пока оператор писал причину, карточка обновилась (SSE): новая версия.
     actions.rerenderWith({ order: { ...order, version: 3 }, etag: '"v3"' });
     await user.click(confirmCancelButton());
-    expect(actions.run).toHaveBeenCalledWith(
-      { kind: 'cancel', reason: 'Клиент передумал' },
-      '"v2"',
-    );
+    expect(actions.run).toHaveBeenCalledWith({ kind: 'cancel', reason: REASON }, '"v2"');
+  });
+
+  it('причина короче 30 символов не уходит: подсказка у поля, пропадает, когда длины хватает', async () => {
+    const user = userEvent.setup();
+    const actions = renderPanel(makeOrder({ status: 'accepted' }));
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    const field = await screen.findByRole('textbox', { name: 'Причина' });
+    expect(field).toHaveProperty('required', true);
+    // Пробелы по краям не считаются: 16 символов.
+    await user.type(field, '  Клиент передумал');
+    await user.click(confirmCancelButton());
+    expect(actions.run).not.toHaveBeenCalled();
+    screen.getByText('Не короче 30 символов — сейчас 16');
+    // Фокус — обратно в поле: ошибка связана с ним, диктор её прочтёт.
+    expect(document.activeElement).toBe(field);
+
+    await user.type(field, ' и попросил отменить заказ');
+    expect(screen.queryByText(/Не короче 30 символов — сейчас/)).toBeNull();
+    await user.click(confirmCancelButton());
+    expect(actions.run).toHaveBeenCalledWith({ kind: 'cancel', reason: REASON }, '"v2"');
+  });
+
+  it('подсказка о короткой причине не остаётся после закрытия модалки', async () => {
+    const user = userEvent.setup();
+    renderPanel(makeOrder({ status: 'accepted' }));
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), 'Коротко');
+    await user.click(confirmCancelButton());
+    screen.getByText('Не короче 30 символов — сейчас 7');
+
+    await user.click(screen.getByRole('button', { name: 'Не отменять' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    await screen.findByRole('dialog', { name: 'Отменить заказ?' });
+    expect(screen.queryByText(/Не короче 30 символов — сейчас/)).toBeNull();
   });
 
   it('ошибка отмены — внутри модалки (причина не теряется), а не в панели', async () => {
     const user = userEvent.setup();
     const actions = renderPanel(makeOrder({ status: 'accepted' }));
     await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), 'Клиент передумал');
+    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), REASON);
     const error = new ApiError(409, {
       type: 'about:blank',
       title: 'Conflict',
@@ -168,14 +204,14 @@ describe('отмена с причиной', () => {
       code: 'TRANSITION_NOT_ALLOWED',
     });
     actions.rerenderWith({
-      actions: { ...actions, error, lastAction: { kind: 'cancel', reason: 'Клиент передумал' } },
+      actions: { ...actions, error, lastAction: { kind: 'cancel', reason: REASON } },
     });
     const dialog = screen.getByRole('dialog', { name: 'Отменить заказ?' });
     expect(dialog.textContent).toContain(
       'Заказ уже передан курьеру или завершён — отменить нельзя',
     );
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Причина' }).value).toBe(
-      'Клиент передумал',
+      REASON,
     );
     expect(screen.queryByText('Не получилось')).toBeNull();
   });

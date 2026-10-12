@@ -1,16 +1,11 @@
 import type { VersionConflictProblem } from '@foodster/shared';
+import { CheckIcon } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { createElement, useRef, useState } from 'react';
 import { errorMessage } from '../api/errors';
 import { orderQuery, ordersKeys, runOrderAction, type OrderAction } from '../api/orders';
-import { isActionAllowed, versionConflictOf } from './actions';
-
-const SUCCESS_MESSAGES: Record<OrderAction['kind'], string> = {
-  transition: 'Статус изменён',
-  courier: 'Курьер сохранён',
-  cancel: 'Заказ отменён',
-};
+import { isActionAllowed, successMessage, versionConflictOf } from './actions';
 
 // Конфликт версий: что пытались сделать и что ответил сервер (актуальный заказ, кто изменил).
 export interface VersionConflict {
@@ -57,7 +52,12 @@ export function useOrderActions(orderId: number) {
         old && old.data.version > response.data.version ? old : response,
       );
       refreshRelated();
-      notifications.show({ color: 'foodsterGreen', message: SUCCESS_MESSAGES[action.kind] });
+      notifications.show({
+        color: 'foodsterGreen',
+        // Галочка в цветном круге — сразу видно, что действие удалось.
+        icon: createElement(CheckIcon, { size: 14 }),
+        message: successMessage(action, response.data),
+      });
     },
     // Колбэки опций мутации срабатывают всегда (в отличие от колбэков отдельного mutate(),
     // которые теряются после reset или размонтирования) — здесь и снимаем «идёт запрос».

@@ -9,8 +9,11 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '../../db/client';
 import { couriers, operators, orderEvents, orders, restaurants } from '../../db/schema';
 
-// Порог word_similarity для поиска по адресу. По умолчанию в pg_trgm 0.6, а одна опечатка
-// («садвая» против «садовая») даёт 0.5 — замерено на нашей БД.
+// Порог word_similarity для поиска по адресу. По умолчанию в pg_trgm 0.6, а одна опечатка даёт
+// 0.4–0.56 — замерено на нашей БД: «садвая» → «Садовая» 0.5, «ленена» → «Ленина» 0.43,
+// «мора» → «Мира» 0.4. Цена — улицы с общим окончанием: «мостовая» находит «Трактовую» (0.44);
+// поэтому при поиске точные совпадения стоят выше похожих (orderByFor). При пороге 0.5
+// терялась примерно половина опечаток в коротких словах (решение пользователя — 0.4).
 export const SEARCH_SIMILARITY_THRESHOLD = 0.4;
 
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -52,11 +55,33 @@ const SORTS = {
   'amount:asc': { key: asc(orders.amountMinor), id: asc(orders.id) },
 } satisfies Record<OrderSortOption, { key: SQL; id: SQL }>;
 
-// relevance — похожесть адреса на поиск; есть, только когда идёт поиск. Выбранная сортировка
-// главная, похожесть решает между равными по ней (одна сумма), последним — id.
-function orderByFor(sort: OrderSortOption, relevance: SQL | undefined): SQL[] {
+// Порядок при поиске (search есть, только когда идёт поиск):
+// 1) точные совпадения — каждое слово запроса входит в адрес как подстрока — выше похожих
+//    (с опечаткой);
+// 2) внутри каждой группы — выбранная сортировка (по умолчанию новые сверху);
+// 3) при равенстве по ней — более похожий адрес; последним — id.
+// Без первого правила свежий адрес «ул. Трактовая» стоял выше точного «ул. Мостовая».
+interface SearchOrder {
+  exact: SQL;
+  relevance: SQL;
+}
+
+function orderByFor(sort: OrderSortOption, search: SearchOrder | undefined): SQL[] {
   const { key, id } = SORTS[sort];
-  return relevance ? [key, desc(relevance), id] : [key, id];
+  return search ? [desc(search.exact), key, desc(search.relevance), id] : [key, id];
+}
+
+// Каждое слово варианта запроса входит в адрес как подстрока (strpos — без шаблонов, так что
+// % и _ в запросе ничего не значат). Любой вариант (раскладка, транслит) засчитывается.
+function exactMatch(variants: string[]): SQL {
+  const perVariant = variants.map((variant) =>
+    and(
+      ...variant
+        .split(' ')
+        .map((word) => sql`strpos(${orders.deliveryAddressSearch}, ${word}) > 0`),
+    ),
+  );
+  return sql`coalesce(${or(...perVariant)}, false)`;
 }
 
 export async function listOrders(
@@ -74,7 +99,7 @@ export async function listOrders(
       }
 
       const variants = query.q ? searchVariants(query.q) : [];
-      let relevance: SQL | undefined;
+      let search: SearchOrder | undefined;
       if (variants.length > 0) {
         // Порог действует только до конца этой транзакции (третий аргумент true).
         await tx.execute(
@@ -83,17 +108,20 @@ export async function listOrders(
         // Оператор <% использует GIN-индекс по delivery_address_search.
         const match = or(...variants.map((v) => sql`${v} <% ${orders.deliveryAddressSearch}`));
         if (match) conditions.push(match);
-        relevance = sql`greatest(${sql.join(
-          variants.map((v) => sql`word_similarity(${v}, ${orders.deliveryAddressSearch})`),
-          sql`, `,
-        )})`;
+        search = {
+          exact: exactMatch(variants),
+          relevance: sql`greatest(${sql.join(
+            variants.map((v) => sql`word_similarity(${v}, ${orders.deliveryAddressSearch})`),
+            sql`, `,
+          )})`,
+        };
       }
       const where = and(...conditions);
 
       const [counted] = await tx.select({ total: count() }).from(orders).where(where);
       const rows = await selectOrders(tx)
         .where(where)
-        .orderBy(...orderByFor(query.sort, relevance))
+        .orderBy(...orderByFor(query.sort, search))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize);
       return { rows, total: counted?.total ?? 0 };

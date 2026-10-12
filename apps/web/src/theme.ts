@@ -1,4 +1,9 @@
-import { createTheme, type CSSVariablesResolver, type MantineColorsTuple } from '@mantine/core';
+import {
+  createTheme,
+  Notification,
+  type CSSVariablesResolver,
+  type MantineColorsTuple,
+} from '@mantine/core';
 
 // Фирменный цвет Foodster — #00802B (оттенок 6); принадлежит правообладателю, см. README,
 // раздел «Товарные знаки».
@@ -37,6 +42,23 @@ export const theme = createTheme({
   primaryColor: 'foodsterGreen',
   // Кнопки и прочие заливки — точно фирменным цветом в обеих темах.
   primaryShade: { light: 6, dark: 6 },
+  components: {
+    // Уведомления заметнее стандартных (белая карточка с тонкой цветной полосой терялась на
+    // белой странице): лёгкая заливка и рамка цветом уведомления. Текст под заголовком у Mantine
+    // жёстко серый (gray-6 / dark-2) и на заливке не проходил 4,5 — берём наш приглушённый
+    // (см. cssVariablesResolver ниже); основной текст на заливке — 17,8 и 8,5.
+    Notification: Notification.extend({
+      defaultProps: { withBorder: true },
+      styles: {
+        root: {
+          backgroundColor:
+            'color-mix(in srgb, var(--notification-color) 12%, var(--mantine-color-body))',
+          borderColor: 'var(--notification-color)',
+        },
+        description: { color: 'var(--mantine-color-dimmed)' },
+      },
+    }),
+  },
 });
 
 // Приглушённый текст (c="dimmed": подсказки, подписи). Стандартный у Mantine не проходит

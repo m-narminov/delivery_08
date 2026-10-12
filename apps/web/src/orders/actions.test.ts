@@ -6,6 +6,7 @@ import {
   fieldError,
   isActionAllowed,
   isAlreadyDone,
+  successMessage,
   versionConflictOf,
 } from './actions';
 
@@ -59,7 +60,7 @@ describe('isActionAllowed — те же правила, что у API', () => {
     ['delivered', false],
     ['cancelled', false],
   ] as const)('отмена из статуса %s — %s', (status, allowed) => {
-    expect(isActionAllowed(makeOrder({ status }), { kind: 'cancel', reason: null })).toBe(allowed);
+    expect(isActionAllowed(makeOrder({ status }), { kind: 'cancel', reason: '' })).toBe(allowed);
   });
 });
 
@@ -69,10 +70,28 @@ describe('isAlreadyDone — другой оператор уже сделал т
       isAlreadyDone(makeOrder({ status: 'preparing' }), { kind: 'transition', to: 'preparing' }),
     ).toBe(true);
     expect(isAlreadyDone(makeOrder({ courier }), { kind: 'courier', courierId: 7 })).toBe(true);
-    expect(
-      isAlreadyDone(makeOrder({ status: 'cancelled' }), { kind: 'cancel', reason: null }),
-    ).toBe(true);
+    expect(isAlreadyDone(makeOrder({ status: 'cancelled' }), { kind: 'cancel', reason: '' })).toBe(
+      true,
+    );
     expect(isAlreadyDone(makeOrder(), { kind: 'courier', courierId: 7 })).toBe(false);
+  });
+});
+
+describe('successMessage — уведомление об успехе', () => {
+  it('курьер: назначен — с именем из ответа, снят — так и написано', () => {
+    expect(successMessage({ kind: 'courier', courierId: 7 }, makeOrder({ courier }))).toBe(
+      'Назначен курьер: Агап Блинов',
+    );
+    expect(successMessage({ kind: 'courier', courierId: null }, makeOrder())).toBe('Курьер снят');
+  });
+
+  it('статус и отмена', () => {
+    expect(successMessage({ kind: 'transition', to: 'preparing' }, makeOrder())).toBe(
+      'Статус изменён',
+    );
+    expect(successMessage({ kind: 'cancel', reason: 'я'.repeat(30) }, makeOrder())).toBe(
+      'Заказ отменён',
+    );
   });
 });
 

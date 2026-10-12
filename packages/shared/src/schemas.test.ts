@@ -60,27 +60,27 @@ describe('orderListQuerySchema', () => {
 });
 
 describe('cancelBodySchema', () => {
-  it('без причины — null', () => {
-    expect(cancelBodySchema.parse({})).toEqual({ reason: null });
+  it.each([
+    ['без причины', {}],
+    ['из пробелов', { reason: '   ' }],
+    ['29 символов после обрезки', { reason: ` ${'я'.repeat(29)} ` }],
+  ])('%s — ошибка', (_case, body) => {
+    expect(cancelBodySchema.safeParse(body).success).toBe(false);
   });
 
-  it('причина из пробелов — null', () => {
-    expect(cancelBodySchema.parse({ reason: '   ' })).toEqual({ reason: null });
-  });
-
-  it('обрезает пробелы вокруг причины', () => {
-    expect(cancelBodySchema.parse({ reason: ' клиент передумал ' })).toEqual({
-      reason: 'клиент передумал',
-    });
-  });
-
-  it('допускает ровно 2000 символов и отклоняет 2001', () => {
+  it('2000 символов — можно, 2001 — нет', () => {
     expect(cancelBodySchema.safeParse({ reason: 'я'.repeat(2000) }).success).toBe(true);
     expect(cancelBodySchema.safeParse({ reason: 'я'.repeat(2001) }).success).toBe(false);
   });
 
-  it('отклоняет символ NUL в причине', () => {
-    expect(cancelBodySchema.safeParse({ reason: 'клиент\u0000передумал' }).success).toBe(false);
+  it('символ NUL в причине — ошибка (Postgres его не принимает)', () => {
+    expect(cancelBodySchema.safeParse({ reason: `${'я'.repeat(30)}\u0000` }).success).toBe(false);
+  });
+
+  it('обрезает пробелы вокруг причины; 30 символов — достаточно', () => {
+    expect(cancelBodySchema.parse({ reason: ` ${'я'.repeat(30)} ` })).toEqual({
+      reason: 'я'.repeat(30),
+    });
   });
 });
 

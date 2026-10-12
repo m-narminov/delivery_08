@@ -80,7 +80,9 @@ export const streamRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
 
       response.writeHead(200, {
         'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-store',
+        // no-transform — прокси не должен сжимать поток: сжатие копит данные в буфер, и события
+        // доходили бы пачками с задержкой.
+        'cache-control': 'no-store, no-transform',
         'x-request-id': request.id,
         // Соединение — только под этот поток. С keep-alive после конца потока (остановка
         // сервера, истечение сессии) сокет остался бы открытым до keepAliveTimeout

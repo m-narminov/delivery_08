@@ -82,7 +82,7 @@ export const couriersQuery = queryOptions({
 export type OrderAction =
   | { kind: 'transition'; to: Exclude<OrderStatus, 'cancelled'> }
   | { kind: 'courier'; courierId: number | null }
-  | { kind: 'cancel'; reason: string | null };
+  | { kind: 'cancel'; reason: string };
 
 // Изменение заказа: версия, которую видел оператор, уходит в If-Match. Устарела — API ответит 412.
 export function runOrderAction(orderId: number, action: OrderAction, etag: string) {
@@ -104,7 +104,7 @@ export function runOrderAction(orderId: number, action: OrderAction, etag: strin
       return apiRequest(`/api/orders/${orderId}/cancel`, orderSchema, {
         ...options,
         method: 'POST',
-        body: { reason: action.reason ?? undefined },
+        body: { reason: action.reason },
       });
   }
 }

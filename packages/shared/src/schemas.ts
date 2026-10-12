@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CANCEL_REASON_MAX_LENGTH } from './order-rules';
+import { CANCEL_REASON_MAX_LENGTH, CANCEL_REASON_MIN_LENGTH } from './order-rules';
 import { ORDER_EVENT_ACTIONS } from './order-events';
 import { ORDER_STATUSES } from './order-status';
 
@@ -71,15 +71,18 @@ export const courierBodySchema = z.object({
 });
 
 export const cancelBodySchema = z.object({
-  // Пустая причина хранится как NULL. JS считает длину в UTF-16 единицах, а varchar(2000)
-  // в Postgres — в символах, которых не больше. Прошедшее проверку всегда влезет в БД.
+  // Причина обязательна, длина — без пробелов по краям. JS считает длину в UTF-16 единицах,
+  // а varchar(2000) в Postgres — в символах, которых не больше: прошедшее проверку влезет в БД.
+  // В БД колонка по-прежнему допускает NULL — у отменённых раньше заказов причины может не быть.
   reason: z
     .string()
     .refine(withoutNul, NUL_MESSAGE)
     .trim()
-    .max(CANCEL_REASON_MAX_LENGTH)
-    .optional()
-    .transform((value) => value || null),
+    .min(
+      CANCEL_REASON_MIN_LENGTH,
+      `Причина отмены — не короче ${CANCEL_REASON_MIN_LENGTH} символов`,
+    )
+    .max(CANCEL_REASON_MAX_LENGTH),
 });
 
 export const loginBodySchema = z.object({

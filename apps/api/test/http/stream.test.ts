@@ -130,7 +130,7 @@ describe('GET /api/stream', () => {
     const stream = await openStream(app, session);
     try {
       expect(stream.response.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
-      expect(stream.response.headers.get('cache-control')).toBe('no-store');
+      expect(stream.response.headers.get('cache-control')).toBe('no-store, no-transform');
       expect(await stream.next()).toBe('retry: 3000');
 
       const changed = await app.inject({
@@ -312,14 +312,14 @@ describe('с Valkey', () => {
       const response = await first.app.inject({
         method: 'POST',
         url: `/api/orders/${order.id}/cancel`,
-        payload: { reason: 'Клиент передумал' },
+        payload: { reason: 'Клиент передумал и попросил отменить заказ' },
         headers: { 'if-match': '"v1"' },
         cookies: { [SESSION_COOKIE]: session },
       });
       expect(response.statusCode).toBe(200);
       expect(await received).toMatchObject({
         orderId: order.id,
-        event: { action: 'cancelled', reason: 'Клиент передумал' },
+        event: { action: 'cancelled', reason: 'Клиент передумал и попросил отменить заказ' },
       });
     } finally {
       await first.close();

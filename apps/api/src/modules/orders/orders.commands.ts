@@ -190,7 +190,7 @@ export function changeOrderCourier(
 export function cancelOrder(
   db: Database,
   target: MutationTarget,
-  reason: string | null,
+  reason: string,
 ): Promise<MutationResult> {
   return mutateOrder(db, target, (_tx, order) => {
     const check = checkStatusChange(order, 'cancelled');

@@ -28,6 +28,20 @@ export function isActionAllowed(order: Order, action: OrderAction): boolean {
   }
 }
 
+// Текст уведомления об успехе. order — заказ из ответа сервера (с назначенным курьером).
+export function successMessage(action: OrderAction, order: Order): string {
+  switch (action.kind) {
+    case 'transition':
+      return 'Статус изменён';
+    case 'courier':
+      return action.courierId === null
+        ? 'Курьер снят'
+        : `Назначен курьер: ${order.courier?.name ?? `№ ${action.courierId}`}`;
+    case 'cancel':
+      return 'Заказ отменён';
+  }
+}
+
 // Что пытался сделать оператор — для модалки конфликта.
 export function describeAction(action: OrderAction, courierName?: string): string {
   switch (action.kind) {

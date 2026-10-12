@@ -4,6 +4,14 @@ export function versionEtag(version: number): string {
   return `"v${version}"`;
 }
 
+// no-transform — для ответов с ETag версии. Перед API на Render прокси со сжатием и Cloudflare.
+// Замер на стенде (до этой правки): браузер, принимающий Brotli, получал сжатый ответ с сильным
+// "v10", а клиент без сжатия — распакованный с ослабленным W/"v10". If-Match сравнивает строго:
+// у такого клиента (или за прокси, который убирает Accept-Encoding) любое изменение заказа
+// получало бы 412. С no-transform прокси не должны менять ответ (RFC 9111), Cloudflare его не
+// сжимает (его документация о сжатии) — и ETag остаётся сильным. Ответы карточки небольшие.
+export const NO_TRANSFORM = 'no-transform';
+
 // If-None-Match: список ETag через запятую или «*». Сравнение слабое (RFC 9110, 13.1.2):
 // W/"v3" совпадает с "v3".
 export function matchesIfNoneMatch(header: string | undefined, etag: string): boolean {

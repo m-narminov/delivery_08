@@ -52,8 +52,10 @@ const transition = (id: number, to: string, ifMatch = '*') =>
   send('POST', `/api/orders/${id}/transitions`, { to }, ifMatch);
 const setCourier = (id: number, courierId: number | null, ifMatch = '*') =>
   send('PUT', `/api/orders/${id}/courier`, { courierId }, ifMatch);
-const cancel = (id: number, reason?: string, ifMatch = '*') =>
-  send('POST', `/api/orders/${id}/cancel`, reason === undefined ? {} : { reason }, ifMatch);
+// Причина отмены обязательна и не короче 30 символов.
+const REASON = 'Клиент передумал и попросил отменить заказ';
+const cancel = (id: number, reason = REASON, ifMatch = '*') =>
+  send('POST', `/api/orders/${id}/cancel`, { reason }, ifMatch);
 
 // Сколько раз встретился каждый код ответа: { 200: 3, 409: 3 }.
 function countStatuses(responses: { statusCode: number }[]): Record<number, number> {
@@ -74,7 +76,7 @@ describe('атомарность: заказ и запись audit — одна 
   beforeAll(async () => {
     // Функция-сбой для триггеров и триггер: вставка в audit падает по сигналу в причине
     // отмены. У каждого тестового файла своя БД, поэтому триггер не влияет на другие тесты;
-    // в этом файле его задевает только причина FAIL_AUDIT.
+    // в этом файле его задевает только причина, начинающаяся с FAIL_AUDIT.
     await db.execute(sql`
       create function fail_audit() returns trigger language plpgsql as $$
       begin
@@ -84,7 +86,7 @@ describe('атомарность: заказ и запись audit — одна 
     `);
     await db.execute(sql`
       create trigger fail_audit before insert on order_events
-      for each row when (new.reason = 'FAIL_AUDIT') execute function fail_audit()
+      for each row when (starts_with(new.reason, 'FAIL_AUDIT')) execute function fail_audit()
     `);
   });
 
@@ -96,7 +98,7 @@ describe('атомарность: заказ и запись audit — одна 
       onGap: () => undefined,
     });
     try {
-      const response = await cancel(order.id, 'FAIL_AUDIT', '"v1"');
+      const response = await cancel(order.id, 'FAIL_AUDIT: сбой записи audit для проверки', '"v1"');
       expect(response.statusCode).toBe(500);
       expect(problemBody(response).code).toBe('INTERNAL_ERROR');
 
@@ -108,7 +110,7 @@ describe('атомарность: заказ и запись audit — одна 
       expect(published).toEqual([]);
 
       // Без сбоя та же отмена проходит: заказ не остался заблокированным или «полуизменённым».
-      expect((await cancel(order.id, 'Клиент передумал', '"v1"')).statusCode).toBe(200);
+      expect((await cancel(order.id, REASON, '"v1"')).statusCode).toBe(200);
     } finally {
       unsubscribe();
     }
@@ -178,7 +180,7 @@ describe('гонки: много одновременных запросов', (
     const responses = await Promise.all([
       transition(order.id, 'ready', '"v1"'),
       setCourier(order.id, courier.id, '"v1"'),
-      cancel(order.id, 'Отмена', '"v1"'),
+      cancel(order.id, REASON, '"v1"'),
       transition(order.id, 'ready', '"v1"'),
       setCourier(order.id, courier.id, '"v1"'),
     ]);

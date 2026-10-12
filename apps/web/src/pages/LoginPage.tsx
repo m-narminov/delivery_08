@@ -121,6 +121,9 @@ export function LoginPage() {
                   value={password}
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   autoComplete="current-password"
+                  // Глаз в поле — показать или скрыть пароль. Подпись — для экранного диктора (по
+                  // умолчанию у Mantine английская); включён ли показ, он сообщает через aria-pressed.
+                  visibilityToggleButtonProps={{ 'aria-label': 'Показать пароль' }}
                   required
                   error={submitted && password === '' ? 'Введите пароль' : undefined}
                 />
