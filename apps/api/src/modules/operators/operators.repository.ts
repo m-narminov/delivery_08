@@ -3,7 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import type { Database } from '../../db/client';
 import { operators } from '../../db/schema';
 
-export type OperatorRow = typeof operators.$inferSelect;
+type OperatorRow = typeof operators.$inferSelect;
 
 export async function findOperatorById(db: Database, id: number): Promise<OperatorRow | undefined> {
   const [row] = await db.select().from(operators).where(eq(operators.id, id)).limit(1);

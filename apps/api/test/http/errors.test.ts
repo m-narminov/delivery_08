@@ -5,7 +5,7 @@ import { buildApp } from '../../src/app';
 import { createDatabase } from '../../src/db/client';
 import { AppError } from '../../src/errors';
 import { createTestApp, problemBody, testConfig, type TestApp } from '../app';
-import { databaseUrl, TEMPLATE_DATABASE } from '../db';
+import { closedDatabase } from '../db';
 
 // Порт, на котором заведомо никто не слушает: подключение сразу получает ECONNREFUSED.
 const UNREACHABLE_DATABASE_URL = 'postgres://foodster:foodster@127.0.0.1:1/foodster';
@@ -216,9 +216,7 @@ describe('GET /api/health', () => {
   });
 
   it('БД недоступна → 503 unavailable', async () => {
-    // Пул закрыт заранее: любой запрос к БД падает, как при недоступной базе.
-    const { db, pool } = createDatabase(databaseUrl(TEMPLATE_DATABASE));
-    await pool.end();
+    const db = await closedDatabase();
     const brokenApp = await buildApp({ config: testConfig(), db });
     try {
       const response = await brokenApp.inject({ method: 'GET', url: '/api/health' });

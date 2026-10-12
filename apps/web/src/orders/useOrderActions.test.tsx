@@ -3,7 +3,7 @@ import { notifications } from '@mantine/notifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { orderQuery } from '../api/orders';
 import { makeEvent, makeOrder } from '../test/fixtures';
 import { useOrderActions } from './useOrderActions';
@@ -33,11 +33,6 @@ function stubApi(routes: Record<string, () => Reply>) {
   );
   return log;
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
 
 function setup(order: Order) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

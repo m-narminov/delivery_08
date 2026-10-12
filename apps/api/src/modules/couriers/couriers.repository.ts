@@ -3,7 +3,7 @@ import { asc, count, inArray } from 'drizzle-orm';
 import type { Database } from '../../db/client';
 import { couriers, orders } from '../../db/schema';
 
-export type CourierProfile = Omit<Courier, 'activeDeliveries'>;
+type CourierProfile = Omit<Courier, 'activeDeliveries'>;
 
 // Справочные данные курьеров — меняются редко, их можно кэшировать.
 export async function listCourierProfiles(db: Database): Promise<CourierProfile[]> {

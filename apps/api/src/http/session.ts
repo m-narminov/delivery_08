@@ -8,7 +8,7 @@ import { findOperatorById, toOperatorDto } from '../modules/operators/operators.
 
 export const SESSION_COOKIE = 'foodster_session';
 
-export interface SessionPayload {
+interface SessionPayload {
   operatorId: number;
   name: string;
 }

@@ -146,7 +146,9 @@ describe('отмена с причиной', () => {
     const order = makeOrder({ status: 'accepted' });
     const actions = renderPanel(order);
     await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), `  ${REASON} `);
+    // Вставка, а не печать: 45 символов по одному — самая долгая часть теста.
+    await user.click(await screen.findByRole('textbox', { name: 'Причина' }));
+    await user.paste(`  ${REASON} `);
     // Счётчик — по всему тексту (как maxLength): 2 + 42 + 1.
     screen.getByText(/45 из 2000$/);
     // Пока оператор писал причину, карточка обновилась (SSE): новая версия.
@@ -194,7 +196,8 @@ describe('отмена с причиной', () => {
     const user = userEvent.setup();
     const actions = renderPanel(makeOrder({ status: 'accepted' }));
     await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
-    await user.type(await screen.findByRole('textbox', { name: 'Причина' }), REASON);
+    await user.click(await screen.findByRole('textbox', { name: 'Причина' }));
+    await user.paste(REASON);
     const error = new ApiError(409, {
       type: 'about:blank',
       title: 'Conflict',

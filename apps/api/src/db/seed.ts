@@ -20,14 +20,14 @@ function optionalByIndex(ids: readonly number[], index: number | null): number |
 // Засевает БД, только если она пустая. Повторный запуск безопасен.
 export async function seedIfEmpty(
   db: Database,
-  options: { operatorPassword: string; now?: Date },
+  options: { operatorPassword: string },
 ): Promise<'seeded' | 'skipped'> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${SEED_LOCK_KEY})`);
     const existing = await tx.select({ id: operators.id }).from(operators).limit(1);
     if (existing.length > 0) return 'skipped';
 
-    const data = generateSeedData(options.now ?? new Date());
+    const data = generateSeedData(new Date());
     // Один хеш на всех: пароль общий (демо-стенд), а scrypt намеренно медленный.
     const passwordHash = await hashPassword(options.operatorPassword);
 
@@ -46,6 +46,7 @@ export async function seedIfEmpty(
         .returning({ id: operators.id })
     ).map((row) => row.id);
 
+    const events: (typeof orderEvents.$inferInsert)[] = [];
     for (const order of data.orders) {
       const [inserted] = await tx
         .insert(orders)
@@ -64,8 +65,8 @@ export async function seedIfEmpty(
         .returning({ id: orders.id });
       if (!inserted) throw new Error('Order insert returned no row');
 
-      await tx.insert(orderEvents).values(
-        order.events.map((event, index) => ({
+      events.push(
+        ...order.events.map((event, index) => ({
           orderId: inserted.id,
           action: event.action,
           fromStatus: event.fromStatus,
@@ -79,6 +80,10 @@ export async function seedIfEmpty(
         })),
       );
     }
+    // История всех заказов — одной вставкой (~1000 строк × 11 колонок — далеко до предела
+    // Postgres в 65 535 параметров), а не 200 запросами. Заказы — по одному: id каждого нужен
+    // для его истории, а порядок строк в RETURNING при вставке нескольких не гарантирован.
+    await tx.insert(orderEvents).values(events);
     return 'seeded';
   });
 }

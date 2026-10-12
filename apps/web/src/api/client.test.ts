@@ -1,13 +1,9 @@
 import { orderSchema } from '@foodster/shared';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
 import { makeOrder } from '../test/fixtures';
 import { ApiError, apiRequest, NetworkError } from './client';
 import { errorMessage } from './errors';
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 function stubFetch(response: Response | Error) {
   const fetch = vi.fn(() =>
@@ -52,7 +48,7 @@ describe('apiRequest', () => {
     );
     const error = await apiRequest('/x', orderSchema).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).code).toBe('COURIER_LIMIT_REACHED');
+    expect((error as ApiError).problem?.code).toBe('COURIER_LIMIT_REACHED');
     expect(errorMessage(error)).toBe('У курьера уже максимум активных доставок: 3');
   });
 

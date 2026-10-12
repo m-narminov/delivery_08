@@ -1,7 +1,7 @@
 import { ORDER_CHANGED_EVENT, orderChangedEventSchema, problemSchema } from '@foodster/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { AppError } from '../../errors';
-import { protectedErrorResponses } from '../../http/problem-responses';
+import { problemResponse, protectedErrorResponses } from '../../http/problem-responses';
 import { currentOperator } from '../../http/session';
 
 // Комментарий-пустышка раз в 25 с: прокси и балансировщики закрывают соединения, по которым
@@ -13,7 +13,7 @@ const RECONNECT_MS = 3_000;
 // поэтому число потоков ограничено: на оператора — несколько вкладок, всего — с запасом
 // на всю смену операторов.
 export const MAX_STREAMS_PER_OPERATOR = 5;
-export const MAX_STREAMS = 200;
+const MAX_STREAMS = 200;
 // Медленный клиент или «полуоткрытое» соединение: данные копятся в памяти сервера.
 // Больше этого — закрываем поток; браузер переподключится и перезапросит данные.
 const MAX_BUFFERED_BYTES = 256 * 1024;
@@ -48,10 +48,10 @@ export const streamRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
             content: { 'text/event-stream': { schema: orderChangedEventSchema } },
           },
           ...protectedErrorResponses,
-          429: {
-            description: 'STREAM_LIMIT_REACHED: too many open streams for this operator',
-            content: { 'application/problem+json': { schema: problemSchema } },
-          },
+          429: problemResponse(
+            problemSchema,
+            'STREAM_LIMIT_REACHED: too many open streams for this operator',
+          ),
         },
       },
     },
@@ -71,7 +71,8 @@ export const streamRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
       }
 
       // Дальше ответ пишем сами, в сыром потоке Node: Fastify его не сериализует и не завершает.
-      // Поэтому хуки onSend (Cache-Control, x-request-id) сюда не доходят — заголовки задаём здесь.
+      // Поэтому заголовки, выставленные через reply (x-request-id из onRequest, Cache-Control из
+      // onSend), сюда не доходят — задаём их здесь.
       reply.hijack();
       const response = reply.raw;
       // Клиент мог уйти, пока проверялась сессия (запрос в БД): событие 'close' уже было,

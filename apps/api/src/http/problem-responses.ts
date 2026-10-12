@@ -10,7 +10,7 @@ import type { z } from 'zod';
 // Ответы с ошибками для схем маршрутов. Одна схема и описывает ошибку в OpenAPI, и проверяет
 // тело ответа при сериализации. Ключ — тип содержимого: Fastify выбирает схему и по статусу,
 // и по Content-Type, а обработчик ошибок отвечает application/problem+json.
-function problemResponse<T extends z.ZodType>(schema: T, description: string) {
+export function problemResponse<T extends z.ZodType>(schema: T, description: string) {
   return { description, content: { [PROBLEM_CONTENT_TYPE]: { schema } } };
 }
 

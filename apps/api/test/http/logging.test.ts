@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app';
-import { createDatabase } from '../../src/db/client';
 import { createLogger } from '../../src/logger';
 import { insertOperator, loginAs, testConfig } from '../app';
-import { createTestDatabase, databaseUrl, TEMPLATE_DATABASE, type TestDatabase } from '../db';
+import { closedDatabase, createTestDatabase, type TestDatabase } from '../db';
 
 // Логгер, который складывает строки в массив вместо stdout.
 function captureLogger(level: string) {
@@ -47,8 +46,7 @@ describe('журнал запросов', () => {
 
   it('уровень silent глушит и ошибку health check (раньше её пропускал logLevel маршрута)', async () => {
     const { lines, logger } = captureLogger('silent');
-    const { db, pool } = createDatabase(databaseUrl(TEMPLATE_DATABASE));
-    await pool.end();
+    const db = await closedDatabase();
     const app = await buildApp({ config: testConfig(), db, logger });
     try {
       const response = await app.inject({ method: 'GET', url: '/api/health' });
@@ -61,8 +59,7 @@ describe('журнал запросов', () => {
 
   it('при уровне info ошибка health check записывается', async () => {
     const { lines, logger } = captureLogger('info');
-    const { db, pool } = createDatabase(databaseUrl(TEMPLATE_DATABASE));
-    await pool.end();
+    const db = await closedDatabase();
     const app = await buildApp({ config: testConfig(), db, logger });
     try {
       await app.inject({ method: 'GET', url: '/api/health' });

@@ -75,7 +75,7 @@ function englishAddress(): string {
 }
 
 // Ссылки на справочники — индексы в массивах seed; реальные id появятся после вставки.
-export interface SeedEvent {
+interface SeedEvent {
   action: OrderEventAction;
   fromStatus: OrderStatus | null;
   toStatus: OrderStatus | null;
@@ -86,7 +86,7 @@ export interface SeedEvent {
   at: Date;
 }
 
-export interface SeedOrder {
+interface SeedOrder {
   status: OrderStatus;
   restaurant: number;
   courier: number | null;
@@ -100,7 +100,7 @@ export interface SeedOrder {
   events: SeedEvent[];
 }
 
-export interface SeedData {
+interface SeedData {
   restaurants: { name: string }[];
   couriers: { name: string; phone: string }[];
   operators: { name: string; email: string }[];

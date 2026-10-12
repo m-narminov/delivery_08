@@ -2,7 +2,7 @@ import { orderChangedEventSchema, type OrderChangedEvent } from '@foodster/share
 import type { FastifyBaseLogger } from 'fastify';
 import type { Redis } from 'ioredis';
 
-export interface OrderEventSubscriber {
+interface OrderEventSubscriber {
   onChange(event: OrderChangedEvent): void;
   // События могли потеряться (обрыв связи с Valkey). Подписчик должен заново получить
   // актуальные данные: SSE-поток для этого закрывается, браузер переподключается
@@ -58,7 +58,7 @@ export function createLocalOrderEventBus(logger: FastifyBaseLogger): OrderEventB
   };
 }
 
-export const ORDER_EVENTS_CHANNEL = 'foodster:orders.changed';
+const ORDER_EVENTS_CHANNEL = 'foodster:orders.changed';
 
 export interface ValkeyOrderEventBus extends OrderEventBus {
   // Подписка подтверждена сервером. Сервер приложения её не ждёт (Valkey необязателен),

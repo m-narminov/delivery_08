@@ -1,5 +1,5 @@
 // ETag заказа строится из его версии: меняется при каждом изменении заказа.
-// Сильный (без W/) — на этапе 6 он пойдёт в If-Match, а там по RFC 9110 сравнение строгое.
+// Сильный (без W/): он же сравнивается в If-Match, а там по RFC 9110 сравнение строгое.
 export function versionEtag(version: number): string {
   return `"v${version}"`;
 }
@@ -23,7 +23,7 @@ export function matchesIfNoneMatch(header: string | undefined, etag: string): bo
 }
 
 // Условие из заголовка If-Match: «*» (любая текущая версия) или список ETag.
-export type IfMatchCondition = { kind: 'any' } | { kind: 'tags'; tags: string[] };
+type IfMatchCondition = { kind: 'any' } | { kind: 'tags'; tags: string[] };
 
 // undefined — заголовка нет (→ 428).
 export function parseIfMatch(header: string | undefined): IfMatchCondition | undefined {

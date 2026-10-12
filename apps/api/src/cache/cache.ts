@@ -16,7 +16,7 @@ export const noCache: Cache = {
 
 // Ключи с версией формата: если формат данных изменится, достаточно поднять версию —
 // старые значения не будут прочитаны и истекут по TTL.
-export const CACHE_KEY_PREFIX = 'foodster:v1:';
+const CACHE_KEY_PREFIX = 'foodster:v1:';
 
 // Справочники в API не меняются, поэтому явной инвалидации нет: устаревание ограничено TTL
 // (например, после пересоздания БД и нового seed). Появится редактирование — удалять ключ
@@ -27,14 +27,8 @@ export function createValkeyCache(options: {
   client: Redis;
   logger: FastifyBaseLogger;
   prefix?: string;
-  ttlSeconds?: number;
 }): Cache {
-  const {
-    client,
-    logger,
-    prefix = CACHE_KEY_PREFIX,
-    ttlSeconds = REFERENCE_CACHE_TTL_SECONDS,
-  } = options;
+  const { client, logger, prefix = CACHE_KEY_PREFIX } = options;
 
   return {
     async getOrLoad(key, schema, load) {
@@ -58,7 +52,7 @@ export function createValkeyCache(options: {
 
       const value = await load();
       try {
-        await client.set(fullKey, JSON.stringify(value), 'EX', ttlSeconds);
+        await client.set(fullKey, JSON.stringify(value), 'EX', REFERENCE_CACHE_TTL_SECONDS);
       } catch (error) {
         logger.warn({ err: error, key: fullKey }, 'Cache write failed');
       }

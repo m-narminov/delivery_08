@@ -13,10 +13,6 @@ export class ApiError extends Error {
     this.status = status;
     this.problem = problem;
   }
-
-  get code(): string | undefined {
-    return this.problem?.code;
-  }
 }
 
 // Запрос не дошёл до сервера: нет сети, сервер не отвечает. Отдельный класс, чтобы не путать

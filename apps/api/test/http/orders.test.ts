@@ -376,6 +376,62 @@ describe('GET /api/orders — поиск по адресу', () => {
     );
   });
 
+  it('запятая в запросе не мешает, число сравнивается целиком: «мостовая, 5» — «д. 5» точное, «д. 15» нет', async () => {
+    await withTemporaryOrders(
+      [
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, ул. Мостовая, д. 5',
+          createdAt: at(8),
+        },
+        // Новее, «5» входит в «15» как подстрока, но число другое.
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, ул. Мостовая, д. 15',
+          createdAt: at(9),
+        },
+      ],
+      async (orderIds) => {
+        const [five, fifteen] = orderIds as [number, number];
+        // «мостовая,5» без пробела: при делении только по пробелу это было бы одно слово.
+        for (const q of ['мостовая, 5', 'мостовая,5', 'мостовая 5']) {
+          const found = await listIds(`?q=${encodeURIComponent(q)}`);
+          expect(found.filter((id) => id === five || id === fifteen)).toEqual([five, fifteen]);
+        }
+      },
+    );
+  });
+
+  it('среди похожих выбранная сортировка главнее похожести', async () => {
+    // «садвая» — опечатка, точных совпадений нет. Похожесть у o1 («Садовая ул.») выше, чем у
+    // o4 («Садово-Кудринская»), но o4 новее — по умолчанию (новые сверху) он первый.
+    const found = await listIds(`?q=${encodeURIComponent('садвая')}`);
+    expect(found.filter((id) => id === ids.o1 || id === ids.o4)).toEqual([ids.o4, ids.o1]);
+  });
+
+  it('похожесть — по лучшему варианту запроса (раскладка)', async () => {
+    // «vjcnjdfz 14» — «мостовая 14» в английской раскладке. Оба адреса не точные, сумма одна;
+    // по варианту «мостовая 14» первый похож больше (0.75 против 0.5), по латинице — наоборот.
+    await withTemporaryOrders(
+      [
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, ул. Мостовая, д. 5',
+          amountMinor: 66_666,
+        },
+        {
+          restaurantId: refs.pizza,
+          deliveryAddress: 'г. Москва, Мостовой пер., д. 14',
+          amountMinor: 66_666,
+        },
+      ],
+      async (pair) => {
+        const found = await listIds(`?q=${encodeURIComponent('vjcnjdfz 14')}&sort=amount:desc`);
+        expect(found.filter((id) => pair.includes(id))).toEqual(pair);
+      },
+    );
+  });
+
   it('опечатка в коротком названии находится: «ленена» → «ул. Ленина»', async () => {
     expect(await listIds(`?q=${encodeURIComponent('ленена')}`)).toContain(ids.o5);
   });
@@ -383,6 +439,15 @@ describe('GET /api/orders — поиск по адресу', () => {
   it('поиск сочетается с фильтром', async () => {
     expect(await listIds(`?q=${encodeURIComponent('садовая')}&status=delivered`)).toEqual([ids.o4]);
   });
+
+  it.each([',', '-', '№', ' , '])(
+    'запрос из одних знаков «%s» — пустой список, а не 500',
+    async (q) => {
+      const response = await get(`/api/orders?q=${encodeURIComponent(q)}`);
+      expect(response.statusCode).toBe(200);
+      expect(response.json<OrderList>()).toMatchObject({ items: [], total: 0 });
+    },
+  );
 
   it('символ NUL в поиске → 400, а не 500 от Postgres', async () => {
     const response = await get('/api/orders?q=%00');

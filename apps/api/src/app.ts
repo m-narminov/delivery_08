@@ -34,7 +34,7 @@ const HEALTH_PATH = '/api/health';
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_PATTERN = /^[\w-]{1,64}$/;
 
-export interface AppDependencies {
+interface AppDependencies {
   config: Config;
   db: Database;
   logger?: FastifyBaseLogger;

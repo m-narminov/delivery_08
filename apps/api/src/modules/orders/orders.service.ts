@@ -15,8 +15,12 @@ export async function getOrder(db: Database, id: number): Promise<Order> {
   return toOrderDto(row);
 }
 
+// Существование заказа проверяется, только если истории нет: у каждого заказа есть хотя бы
+// запись о создании, так что обычно это один запрос вместо двух.
 export async function getOrderEvents(db: Database, id: number): Promise<OrderEvent[]> {
-  if (!(await repository.orderExists(db, id))) throw notFound(`Заказ ${id} не найден`);
   const rows = await repository.listOrderEvents(db, id);
+  if (rows.length === 0 && !(await repository.orderExists(db, id))) {
+    throw notFound(`Заказ ${id} не найден`);
+  }
   return rows.map(toOrderEventDto);
 }

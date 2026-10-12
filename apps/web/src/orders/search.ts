@@ -1,6 +1,8 @@
 import {
   ORDER_SORT_OPTIONS,
   ORDER_STATUSES,
+  PAGE_SIZE_DEFAULT,
+  PAGE_SIZE_MAX,
   SEARCH_QUERY_MAX_LENGTH,
   type OrderStatus,
 } from '@foodster/shared';
@@ -9,12 +11,13 @@ import { z } from 'zod';
 // Фильтры списка живут в адресе страницы: ссылку можно отправить коллеге, «Назад» возвращает
 // прежние фильтры, обновление страницы их не теряет.
 
-export const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
+// Крайние значения — из контракта API, чтобы не разойтись с ним.
+export const PAGE_SIZE_OPTIONS = [PAGE_SIZE_DEFAULT, 50, PAGE_SIZE_MAX] as const;
 
 export const DEFAULT_ORDERS_SEARCH = {
   sort: 'createdAt:desc',
   page: 1,
-  pageSize: 20,
+  pageSize: PAGE_SIZE_DEFAULT,
 } as const;
 
 // ?status=new,ready — как в API. Неизвестные значения отбрасываем, порядок — как в жизненном

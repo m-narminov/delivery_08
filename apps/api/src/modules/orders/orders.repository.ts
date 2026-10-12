@@ -9,34 +9,37 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { Database } from '../../db/client';
 import { couriers, operators, orderEvents, orders, restaurants } from '../../db/schema';
 
-// Порог word_similarity для поиска по адресу. По умолчанию в pg_trgm 0.6, а одна опечатка даёт
-// 0.4–0.56 — замерено на нашей БД: «садвая» → «Садовая» 0.5, «ленена» → «Ленина» 0.43,
-// «мора» → «Мира» 0.4. Цена — улицы с общим окончанием: «мостовая» находит «Трактовую» (0.44);
-// поэтому при поиске точные совпадения стоят выше похожих (orderByFor). При пороге 0.5
-// терялась примерно половина опечаток в коротких словах (решение пользователя — 0.4).
-export const SEARCH_SIMILARITY_THRESHOLD = 0.4;
+// Порог word_similarity для поиска по адресу. По умолчанию в pg_trgm 0.6, а одна опечатка в слове
+// даёт от 0.25–0.33 (слова из 3–5 букв) до 0.89 — замер на словах наших адресов; «садвая» → «Садовая»
+// 0.5, «ленена» → «Ленина» 0.43. При 0.5 терялась примерно половина опечаток в словах из 4–6
+// букв (решение пользователя — 0.4). Цена — похожие, но другие улицы («мостовая» → «Трактовая»
+// 0.44), поэтому точные совпадения стоят выше похожих (orderByFor). И короткие запросы: «г. Москва»
+// есть в каждом русском адресе, и «мост» (0.6 к «москва») находит их все.
+const SEARCH_SIMILARITY_THRESHOLD = 0.4;
 
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
 
 // Заказ вместе с названием ресторана и именем курьера — одним запросом (JOIN), без N+1.
+const orderFields = {
+  id: orders.id,
+  status: orders.status,
+  customerName: orders.customerName,
+  customerPhone: orders.customerPhone,
+  deliveryAddress: orders.deliveryAddress,
+  amountMinor: orders.amountMinor,
+  version: orders.version,
+  createdAt: orders.createdAt,
+  updatedAt: orders.updatedAt,
+  restaurantId: restaurants.id,
+  restaurantName: restaurants.name,
+  courierId: couriers.id,
+  courierName: couriers.name,
+};
+
 function selectOrders(db: Executor) {
   return db
-    .select({
-      id: orders.id,
-      status: orders.status,
-      customerName: orders.customerName,
-      customerPhone: orders.customerPhone,
-      deliveryAddress: orders.deliveryAddress,
-      amountMinor: orders.amountMinor,
-      version: orders.version,
-      createdAt: orders.createdAt,
-      updatedAt: orders.updatedAt,
-      restaurantId: restaurants.id,
-      restaurantName: restaurants.name,
-      courierId: couriers.id,
-      courierName: couriers.name,
-    })
+    .select(orderFields)
     .from(orders)
     .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
     .leftJoin(couriers, eq(orders.courierId, couriers.id));
@@ -56,78 +59,109 @@ const SORTS = {
 } satisfies Record<OrderSortOption, { key: SQL; id: SQL }>;
 
 // Порядок при поиске (search есть, только когда идёт поиск):
-// 1) точные совпадения — каждое слово запроса входит в адрес как подстрока — выше похожих
+// 1) точные совпадения — каждое слово запроса есть в адресе (см. exactMatch) — выше похожих
 //    (с опечаткой);
 // 2) внутри каждой группы — выбранная сортировка (по умолчанию новые сверху);
 // 3) при равенстве по ней — более похожий адрес; последним — id.
 // Без первого правила свежий адрес «ул. Трактовая» стоял выше точного «ул. Мостовая».
 interface SearchOrder {
-  exact: SQL;
+  // Нет, если ни в одном варианте запроса нет слов (одни знаки, «,»): точных совпадений нет.
+  exact: SQL | undefined;
   relevance: SQL;
 }
 
 function orderByFor(sort: OrderSortOption, search: SearchOrder | undefined): SQL[] {
   const { key, id } = SORTS[sort];
-  return search ? [desc(search.exact), key, desc(search.relevance), id] : [key, id];
+  if (!search) return [key, id];
+  // Константа (false) в ORDER BY Postgres не принимает — поэтому без exact, когда слов нет.
+  return [...(search.exact ? [desc(search.exact)] : []), key, desc(search.relevance), id];
 }
 
-// Каждое слово варианта запроса входит в адрес как подстрока (strpos — без шаблонов, так что
-// % и _ в запросе ничего не значат). Любой вариант (раскладка, транслит) засчитывается.
-function exactMatch(variants: string[]): SQL {
-  const perVariant = variants.map((variant) =>
-    and(
-      ...variant
-        .split(' ')
-        .map((word) => sql`strpos(${orders.deliveryAddressSearch}, ${word}) > 0`),
-    ),
-  );
-  return sql`coalesce(${or(...perVariant)}, false)`;
+// Слова запроса — по любым знакам, а не только по пробелу: «садовая, 5» и «д.15» — два слова.
+const WORD_SEPARATOR = /[^\p{L}\p{N}]+/u;
+
+// Слово есть в адресе. Число — целиком: «5» не совпадает с «д. 15» или «кв. 105». Остальное —
+// подстрокой (strpos — без шаблонов, так что % и _ в запросе ничего не значат); «садов» найдёт
+// и «Садовая», и «Садово-Кудринская». В регулярное выражение попадают только цифры.
+function containsWord(word: string): SQL {
+  return /^\d+$/.test(word)
+    ? sql`${orders.deliveryAddressSearch} ~ ${`(^|[^0-9])${word}([^0-9]|$)`}`
+    : sql`strpos(${orders.deliveryAddressSearch}, ${word}) > 0`;
+}
+
+// Точное совпадение: все слова какого-нибудь варианта запроса (раскладка, транслит) есть в адресе.
+function exactMatch(variants: string[]): SQL | undefined {
+  const perVariant = variants
+    .map((variant) => variant.split(WORD_SEPARATOR).filter(Boolean))
+    .filter((words) => words.length > 0)
+    .map((words) => and(...words.map(containsWord)));
+  return or(...perVariant);
 }
 
 export async function listOrders(
   db: Database,
   query: OrderListQuery,
 ): Promise<{ rows: OrderRow[]; total: number }> {
-  // Repeatable read: total и страница считаются по одному снимку данных и не расходятся,
-  // даже если между двумя запросами кто-то изменил заказы.
+  const conditions: SQL[] = [];
+  if (query.status) conditions.push(inArray(orders.status, query.status));
+  if (query.restaurantId !== undefined) {
+    conditions.push(eq(orders.restaurantId, query.restaurantId));
+  }
+
+  const variants = query.q ? searchVariants(query.q) : [];
+  if (variants.length === 0) return listPage(db, query, and(...conditions), undefined);
+
+  // Оператор <% использует GIN-индекс по delivery_address_search.
+  const match = or(...variants.map((v) => sql`${v} <% ${orders.deliveryAddressSearch}`));
+  if (match) conditions.push(match);
+  const search: SearchOrder = {
+    exact: exactMatch(variants),
+    relevance: sql`greatest(${sql.join(
+      variants.map((v) => sql`word_similarity(${v}, ${orders.deliveryAddressSearch})`),
+      sql`, `,
+    )})`,
+  };
+  // Транзакция — только ради порога: set_config(…, true) действует до её конца.
   return db.transaction(
     async (tx) => {
-      const conditions: SQL[] = [];
-      if (query.status) conditions.push(inArray(orders.status, query.status));
-      if (query.restaurantId !== undefined) {
-        conditions.push(eq(orders.restaurantId, query.restaurantId));
-      }
-
-      const variants = query.q ? searchVariants(query.q) : [];
-      let search: SearchOrder | undefined;
-      if (variants.length > 0) {
-        // Порог действует только до конца этой транзакции (третий аргумент true).
-        await tx.execute(
-          sql`select set_config('pg_trgm.word_similarity_threshold', ${String(SEARCH_SIMILARITY_THRESHOLD)}, true)`,
-        );
-        // Оператор <% использует GIN-индекс по delivery_address_search.
-        const match = or(...variants.map((v) => sql`${v} <% ${orders.deliveryAddressSearch}`));
-        if (match) conditions.push(match);
-        search = {
-          exact: exactMatch(variants),
-          relevance: sql`greatest(${sql.join(
-            variants.map((v) => sql`word_similarity(${v}, ${orders.deliveryAddressSearch})`),
-            sql`, `,
-          )})`,
-        };
-      }
-      const where = and(...conditions);
-
-      const [counted] = await tx.select({ total: count() }).from(orders).where(where);
-      const rows = await selectOrders(tx)
-        .where(where)
-        .orderBy(...orderByFor(query.sort, search))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize);
-      return { rows, total: counted?.total ?? 0 };
+      await tx.execute(
+        sql`select set_config('pg_trgm.word_similarity_threshold', ${String(SEARCH_SIMILARITY_THRESHOLD)}, true)`,
+      );
+      return listPage(tx, query, and(...conditions), search);
     },
-    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    { accessMode: 'read only' },
   );
+}
+
+// Страница и общее число — одним SQL-запросом: total считается подзапросом, а один запрос
+// видит один снимок данных, так что total и страница не расходятся. Подзапрос не связан с
+// внешним (внутренний orders заслоняет внешний), Postgres выполняет его один раз. Условия
+// фильтров — только по orders; фильтр по ресторану или курьеру через JOIN связал бы подзапрос
+// с внешним запросом, и total посчитался бы неверно.
+async function listPage(
+  db: Executor,
+  query: OrderListQuery,
+  where: SQL | undefined,
+  search: SearchOrder | undefined,
+): Promise<{ rows: OrderRow[]; total: number }> {
+  const total = sql<number>`(select count(*) from ${orders} where ${where ?? sql`true`})`.mapWith(
+    Number,
+  );
+  const rows = await db
+    .select({ ...orderFields, total })
+    .from(orders)
+    .innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+    .leftJoin(couriers, eq(orders.courierId, couriers.id))
+    .where(where)
+    .orderBy(...orderByFor(query.sort, search))
+    .limit(query.pageSize)
+    .offset((query.page - 1) * query.pageSize);
+  const [first] = rows;
+  if (first) return { rows, total: first.total };
+  // Пустая страница: за последней страницей (или ничего не найдено) total отдельным запросом.
+  if (query.page === 1) return { rows, total: 0 };
+  const [counted] = await db.select({ total: count() }).from(orders).where(where);
+  return { rows, total: counted?.total ?? 0 };
 }
 
 export async function findOrderById(db: Executor, id: number): Promise<OrderRow | undefined> {

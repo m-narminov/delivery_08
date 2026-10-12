@@ -73,7 +73,6 @@ export async function testValkeyDependencies(channel = uniqueName('channel')) {
     channel,
     orderEvents,
     cache,
-    commands,
     subscriber,
     disconnect: () => clients.disconnect(),
   };

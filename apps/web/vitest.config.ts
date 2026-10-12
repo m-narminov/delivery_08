@@ -7,5 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // После каждого теста — вернуть подменённые глобальные объекты (fetch, EventSource) и
+    // восстановить шпионов: тесты не зависят от порядка и не чистят за собой вручную.
+    unstubGlobals: true,
+    restoreMocks: true,
   },
 });

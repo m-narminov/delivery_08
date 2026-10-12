@@ -1,25 +1,17 @@
 export { DEV_OPERATOR_PASSWORD } from './dev-password';
 export { ORDER_STATUSES, type OrderStatus } from './order-status';
 export { ORDER_EVENT_ACTIONS, type OrderEventAction } from './order-events';
-export {
-  normalizeSearchText,
-  searchVariants,
-  toCyrillicLayout,
-  toLatinLayout,
-  transliterateToCyrillic,
-} from './search';
+export { searchVariants } from './search';
 export {
   ACTIVE_DELIVERY_STATUSES,
   CANCEL_REASON_MAX_LENGTH,
   CANCEL_REASON_MIN_LENGTH,
-  COURIER_EDITABLE_STATUSES,
   MAX_ACTIVE_DELIVERIES_PER_COURIER,
   courierHasCapacity,
   isActiveDelivery,
   isCourierEditable,
 } from './order-rules';
 export {
-  allowedTransitions,
   canCancel,
   canTransition,
   checkCourierChange,
@@ -27,7 +19,6 @@ export {
   isTerminal,
   nextStatus,
   type BusinessRuleCode,
-  type RuleCheck,
 } from './order-fsm';
 export {
   ORDER_CHANGED_EVENT,
@@ -41,20 +32,15 @@ export {
   idParamSchema,
   loginBodySchema,
   operatorOptionSchema,
-  operatorSchema,
   orderChangedEventSchema,
   orderEventSchema,
   orderListSchema,
   orderSchema,
   orderListQuerySchema,
-  orderStatusSchema,
-  referenceSchema,
   restaurantSchema,
   sessionSchema,
   transitionBodySchema,
-  type CancelBody,
   type Courier,
-  type CourierBody,
   type LoginBody,
   type Operator,
   type OperatorOption,
@@ -66,7 +52,6 @@ export {
   type OrderSortOption,
   type Restaurant,
   type Session,
-  type TransitionBody,
 } from './schemas';
 export {
   ERROR_CODES,
@@ -74,12 +59,8 @@ export {
   badRequestProblemSchema,
   courierLimitProblemSchema,
   problemSchema,
-  validationIssueSchema,
   versionConflictProblemSchema,
-  type BadRequestProblem,
-  type CourierLimitProblem,
   type ErrorCode,
   type Problem,
-  type ValidationIssue,
   type VersionConflictProblem,
 } from './problem';

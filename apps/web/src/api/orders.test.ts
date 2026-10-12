@@ -1,11 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { makeOrder } from '../test/fixtures';
 import { orderQuery } from './orders';
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe('orderQuery — ответы не по порядку', () => {
   it('более старая версия заказа из запоздавшего ответа не затирает показанную новую', async () => {

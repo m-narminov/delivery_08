@@ -15,7 +15,7 @@ import { DEFAULT_ORDERS_SEARCH, ordersSearchSchema } from './orders/search';
 import { NotFoundInApp, NotFoundPage } from './pages/NotFoundPage';
 import { RouteError, RoutePending } from './pages/RouteStates';
 
-export interface RouterContext {
+interface RouterContext {
   queryClient: QueryClient;
 }
 

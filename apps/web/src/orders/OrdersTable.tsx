@@ -89,9 +89,12 @@ function ScrollShadow({ side, visible }: { side: 'left' | 'right'; visible: bool
 function ScrollShadows({
   viewportRef,
   watch,
+  onScrollableChange,
 }: {
   viewportRef: RefObject<HTMLDivElement | null>;
   watch: unknown;
+  // Есть ли вообще что прокручивать — таблица решает по нему, ставить ли область в порядок Tab.
+  onScrollableChange: (scrollable: boolean) => void;
 }) {
   // Есть ли скрытое содержимое слева и справа. Пока не измерили — нет: лучше без тени
   // мгновение, чем мигнувшая лишняя.
@@ -105,9 +108,11 @@ function ScrollShadows({
       // Запас в 1 px: scrollLeft бывает дробным и до максимума может не дотянуть на долю.
       setMoreLeft(viewport.scrollLeft > 1);
       setMoreRight(viewport.scrollLeft < maxScroll - 1);
+      onScrollableChange(maxScroll > 0);
     };
     measure();
-    // Положение прокрутки — по событию scroll, размеры — как у измерения в таблице.
+    // Положение прокрутки — по событию scroll; размеры — по ResizeObserver: область меняется
+    // вместе с окном, таблица — с содержимым (данные, загрузка шрифта).
     // Состояние — булевы флаги: пока они те же, React перерисовку пропускает.
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
@@ -118,7 +123,7 @@ function ScrollShadows({
       observer.disconnect();
       viewport.removeEventListener('scroll', measure);
     };
-  }, [viewportRef, watch]);
+  }, [viewportRef, watch, onScrollableChange]);
 
   return (
     <>
@@ -127,6 +132,98 @@ function ScrollShadows({
     </>
   );
 }
+
+// Строка — отдельный memo-компонент: после перезапроса той же страницы (событие SSE)
+// structural sharing TanStack Query сохраняет объекты неизменившихся заказов, и перерисовываются
+// только изменившиеся строки, а не все 100 с тремя кнопками копирования в каждой; смена
+// «идёт загрузка» (refreshing) строки не перерисовывает вовсе.
+const OrderRow = memo(function OrderRow({ order }: { order: Order }) {
+  const router = useRouter();
+  // Клик по строке открывает заказ — удобнее, чем целиться в номер. Это добавка для мыши:
+  // с клавиатуры и для экранного диктора переход — ссылка на номере. Не открываем, если кликнули
+  // по ссылке или кнопке (копирование) или выделили текст протягиванием (двойной клик по слову
+  // заказ откроет — для копирования есть кнопки). Ctrl/⌘/Shift и средняя кнопка — в новой
+  // вкладке, как у обычной ссылки; адрес строится так же, как у Link (с учётом basepath).
+  const openOrder = (event: MouseEvent<HTMLTableRowElement>) => {
+    if (event.target instanceof Element && event.target.closest('a, button, input')) return;
+    if (window.getSelection()?.toString()) return;
+    const location = { to: '/orders/$orderId', params: { orderId: order.id } } as const;
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1) {
+      const href = router.history.createHref(router.buildLocation(location).publicHref);
+      window.open(href, '_blank', 'noopener');
+      return;
+    }
+    void router.navigate(location);
+  };
+  return (
+    <Table.Tr
+      onClick={openOrder}
+      // Средняя кнопка мыши даёт auxclick, а не click.
+      onAuxClick={(event) => {
+        if (event.button === 1) openOrder(event);
+      }}
+      style={{ cursor: 'pointer' }}
+    >
+      <Table.Td>
+        <Copyable value={String(order.id)} label={`Скопировать номер заказа ${order.id}`}>
+          {/* Номер — ссылка на карточку: открывается и в новой вкладке. Подчёркнута
+              всегда, чтобы было видно, что это ссылка. Подпись «Заказ 196» для
+              диктора: одно число среди ссылок непонятно. */}
+          <AnchorLink
+            to="/orders/$orderId"
+            params={{ orderId: order.id }}
+            fw={600}
+            size="sm"
+            underline="always"
+            aria-label={`Заказ ${order.id}`}
+          >
+            {order.id}
+          </AnchorLink>
+        </Copyable>
+      </Table.Td>
+      <Table.Td>
+        <StatusBadge status={order.status} />
+      </Table.Td>
+      <Table.Td>
+        <Copyable
+          // Имя и телефон одной строкой — удобно вставить в чат или письмо.
+          // Телефон — в E.164 (+79281824909): такой номер вставляется в звонилку
+          // и мессенджер без правки.
+          value={`${order.customerName}, ${phoneE164(order.customerPhone)}`}
+          label={`Скопировать данные клиента заказа ${order.id}`}
+          maxWidth="12rem"
+        >
+          <Text size="sm">{order.customerName}</Text>
+          <Text size="xs" c="dimmed">
+            {formatPhone(order.customerPhone)}
+          </Text>
+        </Copyable>
+      </Table.Td>
+      <Table.Td>{order.restaurant.name}</Table.Td>
+      <Table.Td>
+        {order.courier ? (
+          order.courier.name
+        ) : (
+          <Text size="sm" c="dimmed">
+            не назначен
+          </Text>
+        )}
+      </Table.Td>
+      <Table.Td style={AMOUNT}>{formatMoney(order.amountMinor)}</Table.Td>
+      <Table.Td>
+        <Copyable
+          value={order.deliveryAddress}
+          label={`Скопировать адрес заказа ${order.id}`}
+          maxWidth="14.5rem"
+        >
+          <Text size="sm">{order.deliveryAddress}</Text>
+        </Copyable>
+      </Table.Td>
+      <DateTimeCell iso={order.createdAt} />
+      <DateTimeCell iso={order.updatedAt} />
+    </Table.Tr>
+  );
+});
 
 interface OrdersTableProps {
   // undefined — первая загрузка, данных ещё нет.
@@ -145,41 +242,11 @@ export const OrdersTable = memo(function OrdersTable({
   refreshing,
   viewportRef,
 }: OrdersTableProps) {
-  const router = useRouter();
-  // Клик по строке открывает заказ — удобнее, чем целиться в номер. Это добавка для мыши:
-  // с клавиатуры и для экранного диктора переход — ссылка на номере. Не открываем, если кликнули
-  // по ссылке или кнопке (копирование) или выделили текст протягиванием (двойной клик по слову
-  // заказ откроет — для копирования есть кнопки). Ctrl/⌘/Shift и средняя кнопка — в новой
-  // вкладке, как у обычной ссылки; адрес строится так же, как у Link (с учётом basepath).
-  const openOrder = (event: MouseEvent<HTMLTableRowElement>, orderId: number) => {
-    if (event.target instanceof Element && event.target.closest('a, button, input')) return;
-    if (window.getSelection()?.toString()) return;
-    const location = { to: '/orders/$orderId', params: { orderId } } as const;
-    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1) {
-      const href = router.history.createHref(router.buildLocation(location).publicHref);
-      window.open(href, '_blank', 'noopener');
-      return;
-    }
-    void router.navigate(location);
-  };
   const ownViewportRef = useRef<HTMLDivElement>(null);
   const mergedViewportRef = useMergedRef(ownViewportRef, viewportRef);
   // Есть ли что прокручивать по горизонтали (узкий экран или широкое содержимое). Пока не
   // измерили — считаем, что есть: доступность с клавиатуры важнее лишней остановки Tab.
   const [scrollable, setScrollable] = useState(true);
-  useEffect(() => {
-    const viewport = ownViewportRef.current;
-    if (!viewport) return;
-    const measure = () => setScrollable(viewport.scrollWidth > viewport.clientWidth);
-    measure();
-    // Область меняется вместе с окном, таблица — с содержимым (данные, загрузка шрифта):
-    // следим за обеими.
-    const observer = new ResizeObserver(measure);
-    observer.observe(viewport);
-    const table = viewport.querySelector('table');
-    if (table) observer.observe(table);
-    return () => observer.disconnect();
-  }, [orders]);
 
   return (
     // На узком экране таблица прокручивается по горизонтали, а не сжимается до нечитаемости.
@@ -248,82 +315,15 @@ export const OrdersTable = memo(function OrdersTable({
                     ))}
                   </Table.Tr>
                 ))
-              : orders.map((order) => (
-                  <Table.Tr
-                    key={order.id}
-                    onClick={(event) => openOrder(event, order.id)}
-                    // Средняя кнопка мыши даёт auxclick, а не click.
-                    onAuxClick={(event) => {
-                      if (event.button === 1) openOrder(event, order.id);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <Table.Td>
-                      <Copyable
-                        value={String(order.id)}
-                        label={`Скопировать номер заказа ${order.id}`}
-                      >
-                        {/* Номер — ссылка на карточку: открывается и в новой вкладке. Подчёркнута
-                            всегда, чтобы было видно, что это ссылка. Подпись «Заказ 196» для
-                            диктора: одно число среди ссылок непонятно. */}
-                        <AnchorLink
-                          to="/orders/$orderId"
-                          params={{ orderId: order.id }}
-                          fw={600}
-                          size="sm"
-                          underline="always"
-                          aria-label={`Заказ ${order.id}`}
-                        >
-                          {order.id}
-                        </AnchorLink>
-                      </Copyable>
-                    </Table.Td>
-                    <Table.Td>
-                      <StatusBadge status={order.status} />
-                    </Table.Td>
-                    <Table.Td>
-                      <Copyable
-                        // Имя и телефон одной строкой — удобно вставить в чат или письмо.
-                        // Телефон — в E.164 (+79281824909): такой номер вставляется в звонилку
-                        // и мессенджер без правки.
-                        value={`${order.customerName}, ${phoneE164(order.customerPhone)}`}
-                        label={`Скопировать данные клиента заказа ${order.id}`}
-                        maxWidth="12rem"
-                      >
-                        <Text size="sm">{order.customerName}</Text>
-                        <Text size="xs" c="dimmed">
-                          {formatPhone(order.customerPhone)}
-                        </Text>
-                      </Copyable>
-                    </Table.Td>
-                    <Table.Td>{order.restaurant.name}</Table.Td>
-                    <Table.Td>
-                      {order.courier ? (
-                        order.courier.name
-                      ) : (
-                        <Text size="sm" c="dimmed">
-                          не назначен
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td style={AMOUNT}>{formatMoney(order.amountMinor)}</Table.Td>
-                    <Table.Td>
-                      <Copyable
-                        value={order.deliveryAddress}
-                        label={`Скопировать адрес заказа ${order.id}`}
-                        maxWidth="14.5rem"
-                      >
-                        <Text size="sm">{order.deliveryAddress}</Text>
-                      </Copyable>
-                    </Table.Td>
-                    <DateTimeCell iso={order.createdAt} />
-                    <DateTimeCell iso={order.updatedAt} />
-                  </Table.Tr>
-                ))}
+              : orders.map((order) => <OrderRow key={order.id} order={order} />)}
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
-      <ScrollShadows viewportRef={ownViewportRef} watch={orders} />
+      <ScrollShadows
+        viewportRef={ownViewportRef}
+        watch={orders}
+        onScrollableChange={setScrollable}
+      />
     </Box>
   );
 });

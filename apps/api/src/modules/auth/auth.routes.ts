@@ -1,14 +1,13 @@
-import {
-  loginBodySchema,
-  problemSchema,
-  PROBLEM_CONTENT_TYPE,
-  sessionSchema,
-} from '@foodster/shared';
+import { loginBodySchema, problemSchema, sessionSchema } from '@foodster/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { AppError, unauthorized } from '../../errors';
-import { commonErrorResponses, protectedErrorResponses } from '../../http/problem-responses';
+import {
+  commonErrorResponses,
+  problemResponse,
+  protectedErrorResponses,
+} from '../../http/problem-responses';
 import { currentOperator, SESSION_COOKIE, sessionCookieOptions } from '../../http/session';
 import { authenticateOperator } from './auth.service';
 
@@ -73,10 +72,10 @@ export const authRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         response: {
           200: sessionSchema,
           ...commonErrorResponses,
-          429: {
-            description: `LOGIN_RATE_LIMITED: more than ${LOGIN_MAX_ATTEMPTS} attempts per minute from one IP; see Retry-After`,
-            content: { [PROBLEM_CONTENT_TYPE]: { schema: problemSchema } },
-          },
+          429: problemResponse(
+            problemSchema,
+            `LOGIN_RATE_LIMITED: more than ${LOGIN_MAX_ATTEMPTS} attempts per minute from one IP; see Retry-After`,
+          ),
         },
       },
     },
