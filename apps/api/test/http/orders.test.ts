@@ -466,7 +466,7 @@ describe('GET /api/orders/:id — карточка', () => {
     const response = await get(`/api/orders/${ids.o2}`);
     expect(response.statusCode).toBe(200);
     expect(response.headers.etag).toBe('"v3"');
-    expect(response.headers['cache-control']).toBe('private, no-cache, no-transform');
+    expect(response.headers['cache-control']).toBe('private, no-cache');
     expect(response.json<Order>()).toMatchObject({ id: ids.o2, version: 3, status: 'ready' });
   });
 

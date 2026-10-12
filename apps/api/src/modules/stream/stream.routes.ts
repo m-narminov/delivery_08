@@ -81,7 +81,7 @@ export const streamRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
 
       response.writeHead(200, {
         'content-type': 'text/event-stream; charset=utf-8',
-        // no-transform — прокси не должен сжимать поток: сжатие копит данные в буфер, и события
+        // no-transform — просьба к прокси не сжимать поток: сжатие копит данные в буфер, и события
         // доходили бы пачками с задержкой.
         'cache-control': 'no-store, no-transform',
         'x-request-id': request.id,

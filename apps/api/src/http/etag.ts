@@ -1,16 +1,8 @@
-// ETag заказа строится из его версии: меняется при каждом изменении заказа.
-// Сильный (без W/): он же сравнивается в If-Match, а там по RFC 9110 сравнение строгое.
+// ETag заказа строится из его версии: меняется при каждом изменении заказа. Сервер отдаёт
+// сильный ("v3"); в If-Match он может вернуться ослабленным прокси (W/"v3") — см. ниже.
 export function versionEtag(version: number): string {
   return `"v${version}"`;
 }
-
-// no-transform — для ответов с ETag версии. Перед API на Render прокси со сжатием и Cloudflare.
-// Замер на стенде (до этой правки): браузер, принимающий Brotli, получал сжатый ответ с сильным
-// "v10", а клиент без сжатия — распакованный с ослабленным W/"v10". If-Match сравнивает строго:
-// у такого клиента (или за прокси, который убирает Accept-Encoding) любое изменение заказа
-// получало бы 412. С no-transform прокси не должны менять ответ (RFC 9111), Cloudflare его не
-// сжимает (его документация о сжатии) — и ETag остаётся сильным. Ответы карточки небольшие.
-export const NO_TRANSFORM = 'no-transform';
 
 // If-None-Match: список ETag через запятую или «*». Сравнение слабое (RFC 9110, 13.1.2):
 // W/"v3" совпадает с "v3".
@@ -32,8 +24,16 @@ export function parseIfMatch(header: string | undefined): IfMatchCondition | und
   return { kind: 'tags', tags: header.split(',').map((tag) => tag.trim()) };
 }
 
-// Строгое сравнение (RFC 9110, 8.8.3.2): ETag совпадает посимвольно. Поэтому "v01" ≠ "v1",
-// а слабый W/"v1" не совпадает ни с чем — такой If-Match даёт 412.
+// Сравнение по версии: W/ перед ETag не учитывается — отступление от строгого сравнения
+// RFC 9110 (8.8.3.2), где слабый ETag в If-Match не совпадает ни с чем. Причина — прокси перед
+// API: на Render ответ сжимается прокси (Cache-Control: no-transform не соблюдается), и клиенту
+// без сжатия приходит распакованный ответ с ослабленным W/"v10" (замер на стенде; браузер
+// с Brotli получает "v10"). Со строгим сравнением такой клиент получал бы 412 на
+// любом изменении. Защиту от конфликтов это не ослабляет: ETag — номер версии, а версия
+// однозначно определяет состояние заказа, как бы ответ ни сжимали по дороге. Значение
+// по-прежнему посимвольное: "v01" ≠ "v1".
 export function ifMatchSatisfied(condition: IfMatchCondition, version: number): boolean {
-  return condition.kind === 'any' || condition.tags.includes(versionEtag(version));
+  if (condition.kind === 'any') return true;
+  const current = versionEtag(version);
+  return condition.tags.some((tag) => (tag.startsWith('W/') ? tag.slice(2) : tag) === current);
 }

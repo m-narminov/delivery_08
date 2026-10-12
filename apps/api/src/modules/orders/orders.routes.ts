@@ -11,7 +11,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { matchesIfNoneMatch, NO_TRANSFORM, versionEtag } from '../../http/etag';
+import { matchesIfNoneMatch, versionEtag } from '../../http/etag';
 import {
   orderErrorResponses,
   orderMutationErrorResponses,
@@ -70,8 +70,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
       const etag = versionEtag(order.version);
       // private — ответ под сессией оператора, общим кэшам его хранить нельзя;
       // no-cache — браузер может хранить, но перед использованием спрашивает сервер (If-None-Match);
-      // no-transform — CDN не должен сжатием ослабить ETag.
-      reply.header('etag', etag).header('cache-control', `private, no-cache, ${NO_TRANSFORM}`);
+      reply.header('etag', etag).header('cache-control', 'private, no-cache');
       if (matchesIfNoneMatch(request.headers['if-none-match'], etag)) {
         reply.code(304).send(undefined);
         return;
@@ -109,9 +108,7 @@ export const ordersRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
     if (result.event) {
       await app.orderEvents.publish({ orderId: result.order.id, event: result.event });
     }
-    reply
-      .header('etag', versionEtag(result.order.version))
-      .header('cache-control', `no-store, ${NO_TRANSFORM}`);
+    reply.header('etag', versionEtag(result.order.version));
     return result.order;
   };
 

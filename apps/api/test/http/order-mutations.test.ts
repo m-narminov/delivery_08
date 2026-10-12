@@ -101,14 +101,18 @@ describe('If-Match: обнаружение конкурентных измене
     expect(problemBody(response).detail).toMatch(/[а-яё]/i);
   });
 
-  it('If-Match со списком ETag: подходит любой из них', async () => {
-    const order = await newOrder();
-    expect((await transition(order.id, 'accepted', '"v0", "v1"')).statusCode).toBe(200);
-  });
+  it.each(['"v0", "v1"', '"v0", W/"v1"'])(
+    'If-Match со списком ETag (%s): подходит любой из них',
+    async (ifMatch) => {
+      const order = await newOrder();
+      expect((await transition(order.id, 'accepted', ifMatch)).statusCode).toBe(200);
+    },
+  );
 
   it.each([
     ['без кавычек', 'v1'],
     ['с ведущим нулём (сравнение посимвольное)', '"v01"'],
+    ['со строчным w/ (по RFC префикс W/ чувствителен к регистру)', 'w/"v1"'],
   ])('If-Match %s не совпадает → 412', async (_case, ifMatch) => {
     const order = await newOrder();
     expect((await transition(order.id, 'accepted', ifMatch)).statusCode).toBe(412);
@@ -163,9 +167,11 @@ describe('If-Match: обнаружение конкурентных измене
     });
   });
 
-  it('слабый ETag в If-Match не подходит (RFC 9110: только строгое сравнение) → 412', async () => {
+  // Прокси перед API может ослабить ETag (W/) — сравнение по версии всё равно работает.
+  it('ослабленный прокси ETag W/"v1" при текущей версии 1 → 200, при устаревшей → 412', async () => {
     const order = await newOrder();
-    expect((await transition(order.id, 'accepted', 'W/"v1"')).statusCode).toBe(412);
+    expect((await transition(order.id, 'accepted', 'W/"v1"')).statusCode).toBe(200);
+    expect((await transition(order.id, 'preparing', 'W/"v1"')).statusCode).toBe(412);
   });
 
   it('If-Match: * — любая текущая версия', async () => {
@@ -188,8 +194,6 @@ describe('POST /api/orders/:id/transitions', () => {
     const response = await transition(order.id, 'accepted', '"v1"');
     expect(response.statusCode).toBe(200);
     expect(response.headers.etag).toBe('"v2"');
-    // CDN не должен сжатием ослабить ETag: иначе следующее изменение получило бы 412.
-    expect(response.headers['cache-control']).toBe('no-store, no-transform');
     const body = response.json<Order>();
     expect(body).toMatchObject({ status: 'accepted', version: 2 });
     expect(Date.parse(body.updatedAt)).toBeGreaterThan(order.updatedAt.getTime());
