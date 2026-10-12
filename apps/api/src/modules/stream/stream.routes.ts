@@ -1,18 +1,22 @@
-import { ORDER_CHANGED_EVENT, orderChangedEventSchema, problemSchema } from '@foodster/shared';
+import {
+  ORDER_CHANGED_EVENT,
+  orderChangedEventSchema,
+  problemSchema,
+  STREAM_PING_EVENT,
+  STREAM_PING_INTERVAL_MS,
+} from '@foodster/shared';
 import type { FastifyPluginCallbackZod } from 'fastify-type-provider-zod';
 import { AppError } from '../../errors';
 import { problemResponse, protectedErrorResponses } from '../../http/problem-responses';
 import { currentOperator } from '../../http/session';
 
-// Комментарий-пустышка раз в 25 с: прокси и балансировщики закрывают соединения, по которым
-// долго ничего не идёт, а клиенту так быстрее видно, что связь оборвалась.
-const HEARTBEAT_MS = 25_000;
 // Через сколько миллисекунд браузер переподключится после обрыва (поле retry в SSE).
 const RECONNECT_MS = 3_000;
 // Каждый поток держит сокет, подписку и таймер. Стенд публичный (вход с общим паролем),
 // поэтому число потоков ограничено: на оператора — несколько вкладок, всего — с запасом
-// на всю смену операторов.
-export const MAX_STREAMS_PER_OPERATOR = 5;
+// на всю смену операторов. На оператора — с запасом: за прокси (Render) сервер узнаёт о
+// закрытии потока с задержкой, и частые F5 или новые вкладки при 5 упирались в лимит.
+export const MAX_STREAMS_PER_OPERATOR = 10;
 const MAX_STREAMS = 200;
 // Медленный клиент или «полуоткрытое» соединение: данные копятся в памяти сервера.
 // Больше этого — закрываем поток; браузер переподключится и перезапросит данные.
@@ -117,7 +121,14 @@ export const streamRoutes: FastifyPluginCallbackZod = (app, _options, done) => {
         // События могли потеряться: закрываем поток, браузер переподключится и перезапросит данные.
         onGap: close,
       });
-      timers.push(setInterval(() => send(': ping\n\n'), HEARTBEAT_MS));
+      // Строка data обязательна: событие без неё EventSource не доставляет, и сторож клиента
+      // (apps/web/src/api/stream.ts) его не увидел бы.
+      timers.push(
+        setInterval(
+          () => send(`event: ${STREAM_PING_EVENT}\ndata: {}\n\n`),
+          STREAM_PING_INTERVAL_MS,
+        ),
+      );
       // Сессия проверяется при подключении. Чтобы поток не пережил её, закрываем его в момент
       // истечения токена; переподключение без действующей сессии получит 401.
       const expiresAt = request.user.exp;

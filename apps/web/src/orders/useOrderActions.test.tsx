@@ -98,7 +98,9 @@ describe('useOrderActions', () => {
     queryClient.setQueryData(orderQuery(196).queryKey, newer);
     // Уведомление показывает onSuccess — значит, ответ уже обработан.
     await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Статус изменён' })),
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/^Статус: «/) as unknown }),
+      ),
     );
 
     expect(queryClient.getQueryData(orderQuery(196).queryKey)).toEqual(newer);

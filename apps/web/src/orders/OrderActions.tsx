@@ -9,6 +9,7 @@ import {
   nextStatus,
   type Courier,
   type Order,
+  type OrderEvent,
 } from '@foodster/shared';
 import {
   Alert,
@@ -138,10 +139,13 @@ function CancelModal({
   onConfirm,
   pending,
   error,
+  changedMeanwhile,
   onClosed,
 }: {
   onClosed: () => void;
   opened: boolean;
+  // Заказ изменили, пока окно открыто: что и кто (если пришло по SSE) — или null.
+  changedMeanwhile: { change: OrderEvent | null } | null;
   reason: string;
   onReasonChange: (reason: string) => void;
   onClose: () => void;
@@ -183,6 +187,20 @@ function CancelModal({
       <Stack gap="md">
         {/* Ошибка — здесь же: набранная причина не теряется, можно исправить и повторить. */}
         {error && !reasonError && <Alert color="red">{errorMessage(error)}</Alert>}
+        {/* Плашка «Заказ только что изменили» на странице скрыта за затемнением модалки — здесь
+            то же, но прямо в окне: оператор видит изменение до того, как подтвердит отмену. */}
+        {changedMeanwhile && (
+          <Alert color="yellow" title="Заказ изменили, пока окно открыто">
+            {changedMeanwhile.change && (
+              <>
+                {eventActorName(changedMeanwhile.change)}:{' '}
+                <b>{describeEvent(changedMeanwhile.change)}</b>.{' '}
+              </>
+            )}
+            Проверьте, нужна ли ещё отмена: она уйдёт по версии, которую вы видели при открытии, и
+            сервер сообщит о конфликте.
+          </Alert>
+        )}
         <Textarea
           label="Причина"
           // Счётчик — по всему тексту, как и ограничение длины поля (maxLength); минимум — без
@@ -299,11 +317,14 @@ export function OrderActions({
   order,
   etag,
   actions,
+  remoteChange = null,
   locked = false,
 }: {
   order: Order;
   etag: string | null;
   actions: Actions;
+  // Последнее изменение заказа другим оператором (по SSE) — для окна отмены.
+  remoteChange?: OrderEvent | null;
   // Заказ только что изменил другой оператор: на мгновение кнопки недоступны, чтобы клик не
   // ушёл по надписи, сменившейся прямо под курсором. Отдельно от isPending: на снятие
   // блокировки фокус не переставляется (это делается только по завершении своего запроса).
@@ -369,6 +390,8 @@ export function OrderActions({
   // Версия, при которой открыли отмену: пока оператор пишет причину, карточка может обновиться
   // (SSE) — отмена уйдёт с той версией, которую он видел, и при чужом изменении получит 412.
   const [cancelEtag, setCancelEtag] = useState<string | null>(null);
+  // Версия заказа при открытии отмены: сменилась — окно предупреждает об этом.
+  const [cancelVersion, setCancelVersion] = useState<number | null>(null);
   const [reason, setReason] = useState('');
   // Последний конфликт держим и после закрытия модалки — чтобы её текст не пропадал во время
   // анимации закрытия.
@@ -401,7 +424,7 @@ export function OrderActions({
     nextAction !== null && isActionAllowed(order, { kind: 'transition', to: nextAction });
   const pendingKind = actions.pendingAction?.kind;
   // Переход в «Готов к выдаче» делает заказ активной доставкой курьера — у курьера на лимите
-  // сервер его отклонит (409). Предупреждаем заранее по счётчику; решает всё равно сервер.
+  // сервер его отклонит (409). Не даём нажать по счётчику курьера; решает всё равно сервер.
   const courier = couriers.data?.find((item) => item.id === order.courier?.id);
   const courierFull =
     nextAction !== null &&
@@ -413,7 +436,7 @@ export function OrderActions({
     !nextAllowed && nextAction === 'picked_up'
       ? 'Сначала назначьте курьера'
       : courierFull
-        ? `У курьера уже ${courier.activeDeliveries} из ${MAX_ACTIVE_DELIVERIES_PER_COURIER} активных доставок — переход отклонят`
+        ? `У курьера уже ${courier.activeDeliveries} из ${MAX_ACTIVE_DELIVERIES_PER_COURIER} активных доставок — смените курьера`
         : null;
   const cancelAllowed = isActionAllowed(order, { kind: 'cancel', reason: '' });
 
@@ -432,7 +455,10 @@ export function OrderActions({
           <Stack gap={4}>
             <Button
               loading={pendingKind === 'transition' || actions.retrying}
-              disabled={!nextAllowed || (blocked && pendingKind !== 'transition')}
+              // У курьера на лимите сервер переход отклонит (409) — кнопка недоступна, причина
+              // в подсказке. Счётчик курьеров обновляется по SSE и при фокусе окна; если он
+              // устарел в сторону «свободен», переход отклонит сервер.
+              disabled={!nextAllowed || courierFull || (blocked && pendingKind !== 'transition')}
               onClick={() => actions.run({ kind: 'transition', to: nextAction }, etag)}
               aria-describedby={nextHint ? hintId : undefined}
             >
@@ -454,6 +480,7 @@ export function OrderActions({
               actions.resetError();
               setReason('');
               setCancelEtag(etag);
+              setCancelVersion(order.version);
               setCancelOpened(true);
             }}
           >
@@ -485,6 +512,16 @@ export function OrderActions({
         }}
         pending={pendingKind === 'cancel'}
         error={actions.lastAction?.kind === 'cancel' ? actions.error : null}
+        changedMeanwhile={
+          cancelVersion !== null && order.version !== cancelVersion
+            ? {
+                // Чужое изменение — только сделанное после открытия окна: событие, пришедшее
+                // раньше, к этому предупреждению не относится.
+                change:
+                  remoteChange && remoteChange.orderVersion > cancelVersion ? remoteChange : null,
+              }
+            : null
+        }
         onConfirm={() => actions.run({ kind: 'cancel', reason: reason.trim() }, cancelEtag ?? etag)}
         // Модалка закрылась, а вернуть фокус некуда (кнопка отмены исчезла или была недоступна,
         // когда модалка открылась) — на заголовок панели.

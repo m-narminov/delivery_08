@@ -1,4 +1,4 @@
-import { ORDER_CHANGED_EVENT } from '@foodster/shared';
+import { ORDER_CHANGED_EVENT, STREAM_PING_EVENT, STREAM_PING_INTERVAL_MS } from '@foodster/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -33,9 +33,9 @@ class FakeEventSource {
     this.readyState = FakeEventSource.OPEN;
     this.onopen?.();
   }
-  emit(data: string) {
-    for (const listener of this.listeners.get(ORDER_CHANGED_EVENT) ?? []) {
-      listener(new MessageEvent(ORDER_CHANGED_EVENT, { data }));
+  emit(data: string, type = ORDER_CHANGED_EVENT) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(new MessageEvent(type, { data }));
     }
   }
   fail(readyState: number) {
@@ -89,6 +89,41 @@ function setup() {
 const change = (orderId: number) => JSON.stringify({ orderId, event: makeEvent() });
 
 describe('useOrderStream', () => {
+  it('сторож: по открытому потоку больше 62,5 с ничего — новый поток; ping продлевает', () => {
+    vi.useFakeTimers();
+    const { result, source } = setup();
+    act(() => source().open());
+    const first = source();
+    // ping каждые 25 с держит поток живым.
+    for (let i = 0; i < 4; i += 1) {
+      act(() => {
+        vi.advanceTimersByTime(STREAM_PING_INTERVAL_MS);
+        first.emit('{}', STREAM_PING_EVENT);
+      });
+    }
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(result.current.status).toBe('open');
+
+    // ping перестал приходить: «полумёртвое» соединение, браузер его сам не оборвёт.
+    act(() => {
+      vi.advanceTimersByTime(STREAM_PING_INTERVAL_MS * 2.5 + 5_000);
+    });
+    expect(first.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(result.current.status).toBe('reconnecting');
+  });
+
+  it('сторож не трогает поток, который не открыт: переподключением занят браузер', () => {
+    vi.useFakeTimers();
+    const { source } = setup();
+    act(() => source().open());
+    act(() => source().fail(FakeEventSource.CONNECTING));
+    act(() => {
+      vi.advanceTimersByTime(STREAM_PING_INTERVAL_MS * 4);
+    });
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
   it('при подключении — перезапрос всех данных заказов (истории событий у сервера нет)', async () => {
     const { result, source, invalidatedKeys } = setup();
     expect(result.current.status).toBe('connecting');

@@ -86,9 +86,9 @@ describe('successMessage — уведомление об успехе', () => {
   });
 
   it('статус и отмена', () => {
-    expect(successMessage({ kind: 'transition', to: 'preparing' }, makeOrder())).toBe(
-      'Статус изменён',
-    );
+    expect(
+      successMessage({ kind: 'transition', to: 'preparing' }, makeOrder({ status: 'preparing' })),
+    ).toBe('Статус: «Готовится»');
     expect(successMessage({ kind: 'cancel', reason: 'я'.repeat(30) }, makeOrder())).toBe(
       'Заказ отменён',
     );

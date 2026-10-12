@@ -112,6 +112,9 @@ export function LoginPage() {
                   value={operatorId}
                   onChange={setOperatorId}
                   searchable
+                  // Повторный выбор того же оператора не снимает выбор (по умолчанию у Mantine
+                  // снимает — и «Войти» неожиданно отвечал «Выберите оператора»).
+                  allowDeselect={false}
                   required
                   nothingFoundMessage="Никого не нашли"
                   error={submitted && operatorId === null ? 'Выберите оператора' : undefined}

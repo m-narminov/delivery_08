@@ -1,6 +1,8 @@
 import {
   ORDER_CHANGED_EVENT,
   orderChangedEventSchema,
+  STREAM_PING_EVENT,
+  STREAM_PING_INTERVAL_MS,
   type OrderChangedEvent,
 } from '@foodster/shared';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -22,6 +24,11 @@ const BATCH_MS = 300;
 // Паузы между самостоятельными попытками после отказа сервера: 3, 6, 12… но не больше минуты.
 const RETRY_BASE_MS = 3_000;
 const RETRY_MAX_MS = 60_000;
+// Сторож: сервер шлёт ping каждые 25 с. Если по открытому потоку ничего не пришло дольше двух
+// с половиной интервалов, соединение «полумёртвое» (сеть пропала без разрыва TCP — браузер
+// этого не замечает и не переподключается): переподключаемся сами.
+const STALE_AFTER_MS = STREAM_PING_INTERVAL_MS * 2.5;
+const WATCHDOG_TICK_MS = 5_000;
 
 type Listener = (change: OrderChangedEvent) => void;
 const listeners = new Set<Listener>();
@@ -62,11 +69,23 @@ export function useOrderStream() {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let batchTimer: ReturnType<typeof setTimeout> | undefined;
     const changedOrders = new Set<number>();
+    let lastMessageAt = Date.now();
+    const touch = () => {
+      lastMessageAt = Date.now();
+    };
+    const watchdog = setInterval(() => {
+      if (source.readyState !== EventSource.OPEN) return;
+      if (Date.now() - lastMessageAt <= STALE_AFTER_MS) return;
+      setStatus('reconnecting');
+      setAttempt((value) => value + 1);
+    }, WATCHDOG_TICK_MS);
+    source.addEventListener(STREAM_PING_EVENT, touch);
 
     // Истории событий у сервера нет: всё, что случилось, пока потока не было (до первого
     // подключения или во время обрыва), могло пройти мимо. Поэтому при каждом подключении
     // перезапрашиваем все данные заказов.
     source.onopen = () => {
+      touch();
       setStatus('open');
       failures.current = 0;
       // Запрос первой загрузки, ещё не вернувшийся, мог прочитать данные до подписки, а
@@ -95,6 +114,7 @@ export function useOrderStream() {
     };
 
     source.addEventListener(ORDER_CHANGED_EVENT, (message: MessageEvent<string>) => {
+      touch();
       let change: OrderChangedEvent;
       try {
         const parsed = orderChangedEventSchema.safeParse(JSON.parse(message.data));
@@ -146,6 +166,7 @@ export function useOrderStream() {
       source.close();
       clearTimeout(retryTimer);
       clearTimeout(batchTimer);
+      clearInterval(watchdog);
     };
   }, [queryClient, attempt]);
 

@@ -8,7 +8,9 @@ export const orderStatusSchema = z.enum(ORDER_STATUSES);
 // Всё, что приходит в URL, — строки, поэтому для path и query нужен coerce.
 export const idParamSchema = z.coerce.number().int().positive();
 
-const idSchema = z.number().int().positive();
+// Пример — для документации API: без него Swagger UI подставлял верхнюю границу целых чисел
+// zod (9007199254740991).
+const idSchema = z.number().int().positive().meta({ example: 196 });
 
 // Postgres не может сохранить или сравнить текст с символом NUL (\u0000): запрос падает с ошибкой
 // кодировки, и клиент получил бы 500. Такой текст — ошибка клиента, отсекаем его при проверке.
@@ -158,6 +160,12 @@ export const orderEventSchema = z.object({
 // Событие потока GET /api/stream: заказ изменился. Внутри — та же запись audit, что в истории:
 // фронт обновит данные и покажет, кто и что изменил.
 export const ORDER_CHANGED_EVENT = 'order.changed';
+
+// Сигнал «связь жива»: событие (не комментарий — комментарии EventSource в браузере не видны)
+// раз в STREAM_PING_INTERVAL_MS. Прокси не закрывают соединение без трафика, а фронт по нему
+// замечает «полумёртвый» поток, который браузер сам не оборвал.
+export const STREAM_PING_EVENT = 'ping';
+export const STREAM_PING_INTERVAL_MS = 25_000;
 
 export const orderChangedEventSchema = z.object({
   orderId: idSchema,

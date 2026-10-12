@@ -220,6 +220,7 @@ export function OrderPage() {
             order={order.data.data}
             etag={order.data.etag}
             actions={actions}
+            remoteChange={remoteChange.event}
             // Сразу после чужого изменения кнопки на секунду недоступны (см. useRemoteChange).
             locked={remoteChange.locked}
           />

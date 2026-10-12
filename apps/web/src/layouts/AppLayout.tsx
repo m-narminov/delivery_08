@@ -1,7 +1,8 @@
 import { Anchor, AppShell, Button, Group, Text, type GroupProps } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi, Link, Outlet, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, Link, Outlet, useNavigate, useRouter } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { errorMessage } from '../api/errors';
 import { logout } from '../api/session';
 import { useOrderStream, type StreamStatus } from '../api/stream';
@@ -45,9 +46,19 @@ function StreamIndicator({
 export function AppLayout() {
   const { session } = route.useRouteContext();
   const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   // Один поток live-обновлений на вкладку: пока открыт макет приложения (оператор вошёл).
   const stream = useOrderStream();
+
+  // Код списка и карточки — отдельные файлы: браузер скачивает их при первом переходе. Пропади
+  // сеть до этого — страница не откроется вовсе, даже с ошибкой и «Повторить». Скачиваем сразу
+  // после входа, пока сеть есть. Неудача не страшна: при переходе роутер попробует снова.
+  useEffect(() => {
+    for (const id of ['/app/orders', '/app/orders/$orderId'] as const) {
+      void router.loadRouteChunk(router.routesById[id]);
+    }
+  }, [router]);
 
   const signOut = useMutation({
     mutationFn: logout,

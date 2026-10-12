@@ -32,7 +32,7 @@ export function isActionAllowed(order: Order, action: OrderAction): boolean {
 export function successMessage(action: OrderAction, order: Order): string {
   switch (action.kind) {
     case 'transition':
-      return 'Статус изменён';
+      return `Статус: «${STATUS_LABELS[order.status]}»`;
     case 'courier':
       return action.courierId === null
         ? 'Курьер снят'

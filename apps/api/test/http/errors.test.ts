@@ -242,6 +242,12 @@ describe('GET /api/docs', () => {
     );
   });
 
+  it('в примерах нет границы целых чисел JS (9007199254740991): она не ограничение API', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
+    expect(response.body).not.toContain(String(Number.MAX_SAFE_INTEGER));
+    expect(response.body).toContain('"example":196');
+  });
+
   it('описывает ошибки как application/problem+json, у изменений заказа — 409, 412 и 428', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const transitions = response.json<Spec>().paths['/api/orders/{id}/transitions']?.post;

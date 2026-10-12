@@ -43,6 +43,12 @@ const queryClient: QueryClient = new QueryClient({
   }),
   defaultOptions: {
     queries: {
+      // Без сети запрос не ставится на паузу (режим по умолчанию 'online' ждал бы сеть с вечной
+      // «Загрузкой…»), а падает с «Нет связи с сервером» — у экрана есть ошибка и «Повторить».
+      networkMode: 'always',
+      // В режиме 'always' TanStack Query по умолчанию не перезапрашивает при возвращении сети —
+      // включаем явно: ошибка «нет связи» сменится данными сама, без «Повторить».
+      refetchOnReconnect: true,
       // Ошибку клиента (4xx) повтор не исправит; сеть и 5xx повторяем дважды.
       retry: (failureCount, error) =>
         !(error instanceof ApiError && error.status < 500) && failureCount < 2,

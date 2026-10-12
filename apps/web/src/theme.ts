@@ -69,12 +69,16 @@ export const theme = createTheme({
 // палитры: фоны строк разные (белый или dark-7, полосы, наведение), и любой сплошной цвет
 // на одном из них пропадал — в тёмной теме фон строки под курсором и есть dark-5.
 // Тень у края прокручиваемой таблицы: на тёмном фоне слабая тень не видна, поэтому плотнее.
+// Цвет текста жёлтых вариантов light, subtle и transparent (у нас — заголовок жёлтого Alert): в
+// светлой теме у Mantine это yellow-9 на заливке yellow-1 — 2,69; основной текст там же — 18,8.
+// В тёмной теме стандартный проходит (8,35).
 export const cssVariablesResolver: CSSVariablesResolver = () => ({
   variables: {},
   light: {
     '--mantine-color-dimmed': 'var(--mantine-color-gray-7)',
     '--foodster-table-column-border': 'rgba(0, 0, 0, 0.08)',
     '--foodster-scroll-shadow': 'rgba(0, 0, 0, 0.12)',
+    '--mantine-color-yellow-light-color': 'var(--mantine-color-text)',
   },
   dark: {
     '--mantine-color-dimmed': 'var(--mantine-color-dark-1)',

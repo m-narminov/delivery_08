@@ -1,4 +1,4 @@
-import type { Courier, Order } from '@foodster/shared';
+import type { Courier, Order, OrderEvent } from '@foodster/shared';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import { couriersQuery } from '../api/orders';
-import { makeOrder } from '../test/fixtures';
+import { makeEvent, makeOrder } from '../test/fixtures';
 import { OrderActions } from './OrderActions';
 import type { useOrderActions } from './useOrderActions';
 
@@ -49,12 +49,18 @@ function renderPanel(order: Order, actions = makeActions(), etag: string | null 
     </MantineProvider>
   );
   const view = render(<OrderActions order={order} etag={etag} actions={actions} />, { wrapper });
-  const rerenderWith = (next: { order?: Order; etag?: string | null; actions?: Actions }) => {
+  const rerenderWith = (next: {
+    order?: Order;
+    etag?: string | null;
+    actions?: Actions;
+    remoteChange?: OrderEvent | null;
+  }) => {
     view.rerender(
       <OrderActions
         order={next.order ?? order}
         etag={next.etag === undefined ? etag : next.etag}
         actions={next.actions ?? actions}
+        remoteChange={next.remoteChange ?? null}
       />,
     );
   };
@@ -90,10 +96,14 @@ describe('OrderActions — только допустимые действия', 
     expect(hint?.textContent).toBe('Сначала назначьте курьера');
   });
 
-  it('перед «Готов к выдаче» — предупреждение, если у курьера уже 3 из 3', () => {
+  it('у курьера уже 3 из 3 — «Готов к выдаче» недоступно, причина в подсказке', () => {
     renderPanel(makeOrder({ status: 'preparing', courier: { id: 7, name: 'Агап Блинов' } }));
-    // getByText сам падает, если текста нет.
-    screen.getByText('У курьера уже 3 из 3 активных доставок — переход отклонят');
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: 'Перевести в «Готов к выдаче»',
+    });
+    expect(button.disabled).toBe(true);
+    const hint = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+    expect(hint?.textContent).toBe('У курьера уже 3 из 3 активных доставок — смените курьера');
   });
 
   it('забранный заказ: отменить и сменить курьера уже нельзя', () => {
@@ -175,6 +185,28 @@ describe('отмена с причиной', () => {
     expect(screen.queryByText(/Не короче 30 символов — сейчас/)).toBeNull();
     await user.click(confirmCancelButton());
     expect(actions.run).toHaveBeenCalledWith({ kind: 'cancel', reason: REASON }, '"v2"');
+  });
+
+  it('заказ изменили, пока окно отмены открыто — предупреждение в окне; старое событие не в счёт', async () => {
+    const user = userEvent.setup();
+    const order = makeOrder({ status: 'accepted', version: 2 });
+    // Чужое изменение до открытия окна (версия 2) — его в окне не показываем.
+    const before = makeEvent({ orderVersion: 2, actor: { id: 5, name: 'Мария Иванова' } });
+    const actions = renderPanel(order);
+    actions.rerenderWith({ remoteChange: before });
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Отменить заказ?' });
+    expect(dialog.textContent).not.toContain('Заказ изменили, пока окно открыто');
+
+    // Своё изменение из другой вкладки: версия новее, а последнее чужое событие — старое.
+    actions.rerenderWith({ order: { ...order, version: 3 }, etag: '"v3"', remoteChange: before });
+    expect(dialog.textContent).toContain('Заказ изменили, пока окно открыто');
+    expect(dialog.textContent).not.toContain('Мария Иванова');
+
+    // Чужое изменение после открытия — с автором.
+    const after = makeEvent({ orderVersion: 4, actor: { id: 5, name: 'Мария Иванова' } });
+    actions.rerenderWith({ order: { ...order, version: 4 }, etag: '"v4"', remoteChange: after });
+    expect(dialog.textContent).toContain('Мария Иванова');
   });
 
   it('подсказка о короткой причине не остаётся после закрытия модалки', async () => {

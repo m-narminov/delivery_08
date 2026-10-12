@@ -72,7 +72,7 @@ export function OrdersFilters({
         ref={searchInputRef}
         label="Поиск по адресу"
         description="Опечатки и неверная раскладка не страшны"
-        placeholder="Например, садовая 5"
+        placeholder="Например, мостовая 140"
         // Подсказка под полем, а не между подписью и полем: иначе поле поиска было бы ниже
         // соседних.
         inputWrapperOrder={['label', 'input', 'description', 'error']}
