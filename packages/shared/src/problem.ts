@@ -26,6 +26,8 @@ export const ERROR_CODES = [
   'PRECONDITION_REQUIRED',
   // 429: у оператора уже открыто максимальное число потоков live-обновлений
   'STREAM_LIMIT_REACHED',
+  // 429: слишком много попыток входа с одного адреса, повторить через Retry-After секунд
+  'LOGIN_RATE_LIMITED',
   'INTERNAL_ERROR',
   // 503: база данных недоступна или перегружена, можно повторить позже
   'SERVICE_UNAVAILABLE',

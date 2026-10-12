@@ -34,10 +34,15 @@ export type TestApp = Awaited<ReturnType<typeof buildApp>>;
 
 // Приложение на отдельной тестовой БД. close() закрывает приложение и удаляет БД.
 // По умолчанию без Valkey (события внутри процесса, без кэша), как при пустом REDIS_URL.
-// webRoot — папка собранного фронта (тест раздачи фронта из API).
-export async function createTestApp(options: { webRoot?: string } = {}) {
+// webRoot — папка собранного фронта (тест раздачи фронта из API); config — замена отдельных
+// настроек (например, TRUST_PROXY).
+export async function createTestApp(options: { webRoot?: string; config?: Partial<Config> } = {}) {
   const testDb = await createTestDatabase();
-  const app = await buildApp({ config: testConfig(), db: testDb.db, webRoot: options.webRoot });
+  const app = await buildApp({
+    config: testConfig(options.config),
+    db: testDb.db,
+    webRoot: options.webRoot,
+  });
   return {
     app,
     db: testDb.db,
@@ -97,12 +102,21 @@ export function problemBody(response: { json: () => unknown }): Problem {
   return problemSchema.parse(response.json());
 }
 
+// Каждый вход — со своего адреса: вход ограничен по частоте с одного IP, а тестам, которые
+// проверяют не это, лимит мешать не должен.
+let loginAddress = 0;
+function nextLoginAddress(): string {
+  loginAddress += 1;
+  return `10.255.${Math.floor(loginAddress / 256) % 256}.${loginAddress % 256}`;
+}
+
 // Входит под оператором и возвращает значение cookie сессии для следующих запросов.
 export async function loginAs(app: TestApp, operatorId: number): Promise<string> {
   const response = await app.inject({
     method: 'POST',
     url: '/api/auth/login',
     payload: { operatorId, password: TEST_PASSWORD },
+    remoteAddress: nextLoginAddress(),
   });
   const session = response.cookies.find((cookie) => cookie.name === SESSION_COOKIE);
   if (response.statusCode !== 200 || !session) {

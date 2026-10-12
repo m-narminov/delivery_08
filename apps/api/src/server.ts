@@ -32,6 +32,13 @@ const config = loadConfig();
 // src/server.ts и от собранного dist/server.js: apps/api/<папка>/ → apps/web/dist.
 // Проверяем до подключения к БД и Valkey: без сборки падаем сразу.
 const webRoot = config.NODE_ENV === 'production' ? resolveWebRoot() : undefined;
+// За прокси без TRUST_PROXY IP любого клиента — адрес прокси: лимит попыток входа стал бы
+// общим на всех. Не ошибка (сервис может работать и без прокси), но в логе должно быть видно.
+if (config.NODE_ENV === 'production' && config.TRUST_PROXY === undefined) {
+  logger.warn(
+    'TRUST_PROXY is not set: behind a proxy every client shares the proxy IP (login rate limit, logs)',
+  );
+}
 
 const { db, pool } = createDatabase(config.DATABASE_URL);
 
@@ -62,7 +69,8 @@ async function closeResources(): Promise<void> {
 
 // Graceful shutdown: перестаём принимать новые запросы, закрываем SSE-потоки, дожидаемся
 // текущих запросов, затем закрываем соединения с Valkey и пул БД.
-// Render при деплое и остановке присылает SIGTERM; Ctrl+C в терминале — SIGINT.
+// Render присылает SIGTERM при деплое (через 60 с после переключения трафика на новый инстанс,
+// SIGKILL — ещё через 30 с); Ctrl+C в терминале — SIGINT.
 // Сигнал может прийти дважды: если платформа шлёт его всей группе процессов, node получает
 // и свой, и пересланный от npm. Повторный игнорируем — иначе процесс умер бы сразу,
 // не закрыв соединения (поведение Node по умолчанию, когда обработчика нет).

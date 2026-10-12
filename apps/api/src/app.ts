@@ -1,5 +1,6 @@
 import './zod-locale';
 import { randomUUID } from 'node:crypto';
+import rateLimit from '@fastify/rate-limit';
 import Fastify, { LogController, type FastifyBaseLogger } from 'fastify';
 import {
   serializerCompiler,
@@ -95,6 +96,10 @@ export async function buildApp({
   if (webRoot !== undefined) await registerWebApp(base, webRoot);
   await registerSwagger(base);
   await registerSession(base, config);
+  // Ограничение частоты запросов: включается только у маршрутов с config.rateLimit (вход).
+  // Счётчики — в памяти процесса: на Render один инстанс. При нескольких инстансах лимит
+  // считался бы у каждого свой (сумма — в N раз больше), тогда нужно хранилище в Valkey.
+  await base.register(rateLimit, { global: false });
 
   // Маршруты — инкапсулированные плагины: всё, что зарегистрировано внутри, видно только им.
   const app = base.withTypeProvider<ZodTypeProvider>();
