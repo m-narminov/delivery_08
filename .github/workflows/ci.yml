@@ -1,0 +1,51 @@
+# Проверки на каждый пуш в master и каждый pull request — те же команды, что и локально (README).
+# Зелёный прогон — условие деплоя на Render (Auto-Deploy: After CI Checks Pass).
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Токену прогона нужно только читать код.
+permissions:
+  contents: read
+
+# Новый пуш в master (или в тот же pull request) отменяет ещё идущий прогон: проверять
+# устаревший коммит незачем.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # Действия закреплены по SHA коммита (рядом — версия): тег можно перевесить, SHA — нет.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Токен нужен только чтобы скачать код: дальше git-команд нет, на диске его не оставляем.
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck, lint, format
+        run: npm run check
+
+      # Тестовые Postgres и Valkey — тем же docker-compose.yml, что и локально.
+      - name: Start test database
+        run: npm run test-db:setup
+
+      - name: Test
+        run: npm test
+
+      # Production-сборка — та же, что выполнит Render: ошибка видна до деплоя.
+      - name: Build
+        run: npm run build
