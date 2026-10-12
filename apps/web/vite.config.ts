@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 // В разработке фронт и API — разные процессы: Vite на 5173, API на 3000. Запросы /api Vite
 // проксирует в API, поэтому браузер видит один источник: cookie сессии и SSE работают без CORS.
-// В production фронт раздаёт сам API (этап 9).
+// В production фронт раздаёт сам API (apps/api/src/http/web-app.ts).
 const API_URL = process.env.API_URL ?? 'http://localhost:3000';
 
 export default defineConfig({

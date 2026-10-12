@@ -58,7 +58,7 @@ type Decide = (
 ) => Mutation | null | Promise<Mutation | null>;
 
 // Результат изменения: заказ и запись audit. event = null — ничего не изменилось (no-op):
-// публиковать событие об изменении (этап 6b) в этом случае не нужно.
+// публиковать событие об изменении в этом случае не нужно.
 export interface MutationResult {
   order: Order;
   event: OrderEvent | null;

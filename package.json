@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "dev-db:up": "docker compose up -d --wait",
-    "dev-db:down": "docker compose stop",
+    "dev-db:down": "docker compose --profile test stop",
     "dev-db:reset": "docker compose --profile test down -v",
     "dev-db:setup": "npm run dev-db:up && npm run db:migrate && npm run db:seed",
     "test-db:up": "docker compose --profile test up -d --wait postgres-test valkey",
